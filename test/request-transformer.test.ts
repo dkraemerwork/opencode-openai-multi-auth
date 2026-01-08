@@ -1057,7 +1057,7 @@ describe('Request Transformer Module', () => {
 			expect(result.reasoning?.effort).toBe('low');
 		});
 
-		it('should preserve minimal for non-codex models', async () => {
+		it('should normalize minimal to low for non-codex models', async () => {
 			const body: RequestBody = {
 				model: 'gpt-5',
 				input: [],
@@ -1067,7 +1067,7 @@ describe('Request Transformer Module', () => {
 				models: {},
 			};
 			const result = await transformRequestBody(body, codexInstructions, userConfig);
-			expect(result.reasoning?.effort).toBe('minimal');
+			expect(result.reasoning?.effort).toBe('low');
 		});
 
 		it('should use minimal effort for lightweight models', async () => {
@@ -1077,6 +1077,16 @@ describe('Request Transformer Module', () => {
 			};
 			const result = await transformRequestBody(body, codexInstructions);
 			expect(result.reasoning?.effort).toBe('medium');
+		});
+
+		it('should normalize minimal to low when provided by the host', async () => {
+			const body: RequestBody = {
+				model: 'gpt-5-nano',
+				input: [],
+				reasoning: { effort: 'minimal' },
+			};
+			const result = await transformRequestBody(body, codexInstructions);
+			expect(result.reasoning?.effort).toBe('low');
 		});
 
 		it('should convert orphaned function_call_output to message to preserve context', async () => {

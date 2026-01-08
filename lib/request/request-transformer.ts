@@ -273,9 +273,9 @@ export function getReasoningConfig(
 		effort = "low";
 	}
 
-	// Normalize "minimal" to "low" for Codex families
-	// Codex CLI presets are low/medium/high (or xhigh for Codex Max / GPT-5.2 Codex)
-	if (isCodex && effort === "minimal") {
+	// Normalize "minimal" to "low" for all non-mini models
+	// The ChatGPT Codex backend does not accept "minimal" (supports none/low/medium/high).
+	if (effort === "minimal") {
 		effort = "low";
 	}
 

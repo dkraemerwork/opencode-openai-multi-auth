@@ -69,10 +69,10 @@ describe('Configuration Parsing', () => {
 			expect(defaultReasoning.summary).toBe('auto');
 		});
 
-		it('should use minimal effort for lightweight models (nano/mini)', () => {
+		it('should normalize lightweight defaults to low effort (nano/mini)', () => {
 			const nanoReasoning = getReasoningConfig('gpt-5-nano', {});
 
-			expect(nanoReasoning.effort).toBe('minimal');
+			expect(nanoReasoning.effort).toBe('low');
 			expect(nanoReasoning.summary).toBe('auto');
 		});
 
@@ -84,11 +84,11 @@ describe('Configuration Parsing', () => {
 			expect(codexMinimalReasoning.summary).toBe('auto');
 		});
 
-		it('should preserve "minimal" effort for non-codex models', () => {
+		it('should normalize "minimal" effort for non-codex models', () => {
 			const gpt5MinimalConfig = { reasoningEffort: 'minimal' as const };
 			const gpt5MinimalReasoning = getReasoningConfig('gpt-5', gpt5MinimalConfig);
 
-			expect(gpt5MinimalReasoning.effort).toBe('minimal');
+			expect(gpt5MinimalReasoning.effort).toBe('low');
 		});
 
 		it('should handle high effort setting', () => {
@@ -134,7 +134,7 @@ describe('Configuration Parsing', () => {
 	describe('Model-specific behavior', () => {
 		it('should detect lightweight models correctly', () => {
 			const miniReasoning = getReasoningConfig('gpt-5-mini', {});
-			expect(miniReasoning.effort).toBe('minimal');
+			expect(miniReasoning.effort).toBe('low');
 		});
 
 		it('should detect codex models correctly', () => {
