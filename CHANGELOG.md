@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Dates use the ISO format (YYYY-MM-DD).
 
+## [4.4.0] - 2026-01-09
+
+**Maintenance release**: OAuth success page version sync.
+
+### Changed
+- **OAuth success banner**: Updates the success page header to display the current release version.
+
 ## [4.3.1] - 2026-01-08
 
 **Installer safety release**: JSONC support, safe uninstall, and minimal reasoning clamp.
