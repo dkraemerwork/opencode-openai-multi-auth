@@ -35,10 +35,13 @@ This document explains the technical design decisions, architecture, and impleme
        ▼
 ┌──────────────────────────────┐
 │  This Plugin                 │
+│  - AccountManager            │
+│  - Multi-account rotation    │
 │  - OAuth authentication      │
 │  - Request transformation    │
 │  - store:false handling      │
 │  - Codex bridge prompts      │
+│  - Toast notifications       │
 └──────┬───────────────────────┘
        │
        │ HTTP POST with OAuth
@@ -52,6 +55,100 @@ This document explains the technical design decisions, architecture, and impleme
 │  - Returns SSE stream        │
 └──────────────────────────────┘
 ```
+
+---
+
+## Multi-Account System
+
+### AccountManager (`lib/accounts/manager.ts`)
+
+The AccountManager handles multiple ChatGPT accounts with automatic rotation:
+
+```typescript
+class AccountManager {
+  // Core state
+  private accounts: ManagedAccount[] = [];
+  private activeIndex = 0;
+  private config: MultiAccountConfig;
+
+  // Key methods
+  async loadFromDisk(): Promise<void>           // Load accounts from JSON
+  async importFromOpenCodeAuth(): Promise<void> // Import from legacy auth
+  async addAccount(...): Promise<ManagedAccount> // Add new account
+  async getNextAvailableAccount(model?): Promise<ManagedAccount | null>
+  markRateLimited(account, retryAfterMs, model?)
+  async ensureValidToken(account): Promise<boolean>
+}
+```
+
+### Account Selection Flow
+
+```
+1. Request comes in with model name
+   │
+   ├─▶ getNextAvailableAccount(model)
+   │      │
+   │      ├─▶ Check current account availability
+   │      │      ├─ consecutiveFailures < 3?
+   │      │      ├─ globalRateLimitReset expired?
+   │      │      └─ perModelRateLimit[model] expired?
+   │      │
+   │      ├─▶ If available: use current account
+   │      │
+   │      └─▶ If not: try next accounts in order
+   │             │
+   │             └─▶ If all rate limited: return least-limited
+   │
+   ├─▶ ensureValidToken(account)
+   │      │
+   │      ├─▶ Check expiration (5 min proactive refresh)
+   │      └─▶ Refresh if needed
+   │
+   └─▶ executeRequest(account, input, init)
+          │
+          ├─▶ On 429: markRateLimited() + try next account
+          ├─▶ On 401: markRefreshFailed() + try next account
+          └─▶ On success: return response
+```
+
+### Account Storage Format
+
+```json
+{
+  "version": 1,
+  "accounts": [
+    {
+      "index": 0,
+      "email": "user@example.com",
+      "userId": "user-xxx",
+      "accountId": "acct-xxx",
+      "planType": "plus",
+      "addedAt": 1705000000000,
+      "lastUsed": 1705001000000,
+      "parts": {
+        "refreshToken": "..."
+      },
+      "access": "eyJ...",
+      "expires": 1705003600000,
+      "rateLimitResets": {
+        "gpt-5.2-codex": 1705002000000
+      },
+      "globalRateLimitReset": null,
+      "consecutiveFailures": 0
+    }
+  ],
+  "activeAccountIndex": 0
+}
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENCODE_OPENAI_QUIET` | Disable toast notifications | Off |
+| `OPENCODE_OPENAI_DEBUG` | Enable debug logging | Off |
+| `OPENCODE_OPENAI_STRATEGY` | `sticky`, `round-robin`, `hybrid` | `sticky` |
+| `OPENCODE_OPENAI_PID_OFFSET` | PID-based account offset | Off |
 
 ---
 

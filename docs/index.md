@@ -83,11 +83,13 @@ opencode run "write hello world to test.txt" --model=openai/gpt-5.2 --variant=me
 
 ## Features
 
+✅ **Multi-Account Support** - Add multiple ChatGPT accounts with automatic rotation on rate limits
 ✅ **OAuth Authentication** - Secure ChatGPT Plus/Pro login
 ✅ **GPT 5.2 + GPT 5.2 Codex + GPT 5.1 Models** - 22 pre-configured variants across GPT 5.2, GPT 5.2 Codex, GPT 5.1, Codex, Codex Max, Codex Mini
 ✅ **Variant system support** - Works with OpenCode v1.0.210+ model variants and legacy presets
 ✅ **Per-Model Configuration** - Different reasoning effort, including `xhigh` for GPT 5.2, GPT 5.2 Codex, and Codex Max
 ✅ **Multi-Turn Conversations** - Full conversation history with stateless backend
+✅ **Toast Notifications** - Visual feedback for account switches and rate limits
 ✅ **Verified Configuration** - Use `config/opencode-modern.json` (v1.0.210+) or `config/opencode-legacy.json` (older)
 ✅ **Comprehensive Testing** - 200+ unit tests + integration tests
 
@@ -110,10 +112,12 @@ opencode run "write hello world to test.txt" --model=openai/gpt-5.2 --variant=me
 
 The plugin intercepts OpenCode's OpenAI SDK requests and transforms them for the ChatGPT backend API:
 
-1. **OAuth Token Management** - Handles token refresh automatically
-2. **Request Transformation** - Converts OpenCode SDK format → Codex API format
-3. **AI SDK Compatibility** - Filters SDK-specific constructs for Codex API
-4. **Stateless Operation** - Works with ChatGPT backend's `store: false` requirement
+1. **Multi-Account Management** - Manages multiple ChatGPT accounts with automatic rotation
+2. **OAuth Token Management** - Handles token refresh automatically per account
+3. **Request Transformation** - Converts OpenCode SDK format → Codex API format
+4. **AI SDK Compatibility** - Filters SDK-specific constructs for Codex API
+5. **Stateless Operation** - Works with ChatGPT backend's `store: false` requirement
+6. **Rate Limit Handling** - Tracks per-model limits and rotates accounts when needed
 
 See [Architecture](development/ARCHITECTURE.md) for technical details.
 

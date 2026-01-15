@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented here. Dates use the ISO format (YYYY-MM-DD).
 
+## [5.0.0] - 2026-01-15
+
+**Major release**: Multi-account support with automatic rotation on rate limits.
+
+### Added
+- **Multi-account management**: Add multiple ChatGPT accounts and automatically rotate between them when rate limited.
+- **AccountManager class** (`lib/accounts/manager.ts`): Handles account storage, selection, token refresh, and rate limit tracking.
+- **Per-model rate limit tracking**: Each model's rate limits tracked separately per account.
+- **Toast notifications**: Visual feedback for account switches and rate limits via OpenCode TUI.
+- **"Add Another OpenAI Account"** auth method: Easily add additional accounts without replacing existing ones.
+- **Account import**: Automatically imports tokens from OpenCode's legacy auth storage on first run.
+- **Environment variables** for multi-account configuration:
+  - `OPENCODE_OPENAI_QUIET`: Disable toast notifications
+  - `OPENCODE_OPENAI_DEBUG`: Enable debug logging
+  - `OPENCODE_OPENAI_STRATEGY`: Account selection strategy (`sticky`, `round-robin`, `hybrid`)
+  - `OPENCODE_OPENAI_PID_OFFSET`: Enable PID-based account offset
+
+### Changed
+- **Account storage location**: Moved from `~/.opencode/auth/openai.json` to `~/.config/opencode/openai-accounts.json`.
+- **Token refresh**: Now handled per-account with 5-minute proactive refresh threshold.
+- **Error handling**: 401/429 errors trigger automatic account rotation before failing.
+- **Documentation**: Updated all docs with multi-account setup and troubleshooting.
+
+### Technical Details
+- `ManagedAccount` interface tracks: email, userId, accountId, planType, tokens, rate limits, failure count.
+- `MultiAccountConfig` supports: selection strategy, debug mode, quiet mode, PID offset, per-model limits.
+- Accounts with 3+ consecutive failures are skipped until manually re-authenticated.
+- Invalid grant errors automatically remove the affected account.
+
 ## [4.4.0] - 2026-01-09
 
 **Maintenance release**: OAuth success page version sync.

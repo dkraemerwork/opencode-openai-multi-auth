@@ -16,6 +16,7 @@ Failed to access Codex API
 1. Token expired
 2. Not authenticated yet
 3. Invalid credentials
+4. All accounts have failed token refresh
 
 **Solutions:**
 
@@ -24,19 +25,25 @@ Failed to access Codex API
 opencode auth login
 ```
 
-**2. Check auth file exists:**
+**2. Check accounts file exists:**
 ```bash
-cat ~/.opencode/auth/openai.json
-# Should show OAuth credentials
+cat ~/.config/opencode/openai-accounts.json
+# Should show your accounts with OAuth credentials
 ```
 
 **3. Check token expiration:**
 ```bash
 # Token has "expires" timestamp
-cat ~/.opencode/auth/openai.json | jq '.expires'
+cat ~/.config/opencode/openai-accounts.json | jq '.accounts[0].expires'
 
 # Compare to current time
 date +%s000  # Current timestamp in milliseconds
+```
+
+**4. Add another account (if all are failing):**
+```bash
+opencode auth login
+# Select "Add Another OpenAI Account"
 ```
 
 ### Browser Doesn't Open for OAuth
@@ -236,11 +243,86 @@ Check headers in response logs:
 cat ~/.opencode/logs/codex-plugin/request-*-response.json | jq '.headers["x-codex-primary-reset-after-seconds"]'
 ```
 
-**2. Switch to different model:**
+**2. Add another account:**
+The plugin automatically rotates to available accounts when rate limited.
+```bash
+opencode auth login
+# Select "Add Another OpenAI Account"
+```
+
+**3. Switch to different model:**
 ```bash
 # If codex is rate limited, try gpt-5
 opencode run "task" --model=openai/gpt-5
 ```
+
+**4. Check account status:**
+```bash
+# See which accounts are rate limited
+cat ~/.config/opencode/openai-accounts.json | jq '.accounts[] | {email, rateLimitResets, consecutiveFailures}'
+```
+
+---
+
+## Multi-Account Issues
+
+### Account Not Rotating
+
+**Symptom**: Rate limited but not switching to another account
+
+**Causes:**
+1. Only one account configured
+2. All accounts are rate limited
+3. All accounts have 3+ consecutive failures
+
+**Debug:**
+```bash
+# Enable debug mode
+OPENCODE_OPENAI_DEBUG=1 opencode run "test"
+
+# Check accounts status
+cat ~/.config/opencode/openai-accounts.json | jq '.accounts | length'
+```
+
+### Wrong Account Being Used
+
+**Symptom**: Using different account than expected
+
+**Solutions:**
+
+**1. Check selection strategy:**
+```bash
+# Use sticky (default) to stay with one account
+OPENCODE_OPENAI_STRATEGY=sticky opencode run "test"
+
+# Use round-robin to rotate
+OPENCODE_OPENAI_STRATEGY=round-robin opencode run "test"
+```
+
+**2. Check active account index:**
+```bash
+cat ~/.config/opencode/openai-accounts.json | jq '.activeAccountIndex'
+```
+
+### Toast Notifications Not Showing
+
+**Cause**: Quiet mode enabled or TUI not supporting toasts
+
+**Check:**
+```bash
+# Ensure quiet mode is off
+unset OPENCODE_OPENAI_QUIET
+opencode run "test"
+```
+
+### Account Keeps Getting Removed
+
+**Cause**: Token refresh keeps failing with "invalid_grant"
+
+**Solutions:**
+1. Re-authenticate that account
+2. Check if ChatGPT subscription is still active
+3. Revoke and re-add the account
 
 ### "Context Window Exceeded"
 

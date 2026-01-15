@@ -23,11 +23,21 @@ This plugin prioritizes user privacy and data security. We believe in transparen
 
 All data is stored **locally on your machine**:
 
-### OAuth Tokens
-- **Location:** `~/.opencode/auth/openai.json`
-- **Contents:** Access tokens, refresh tokens, expiration timestamps
-- **Managed by:** OpenCode's credential management system
+### OAuth Tokens & Accounts
+- **Location:** `~/.config/opencode/openai-accounts.json`
+- **Contents:** 
+  - Account email addresses
+  - Access tokens and refresh tokens
+  - Expiration timestamps
+  - Rate limit reset times per model
+  - Account plan type (plus/pro)
+- **Managed by:** Plugin's AccountManager
 - **Security:** File permissions restrict access to your user account
+
+### Legacy Auth (imported automatically)
+- **Location:** `~/.local/share/opencode/auth.json`
+- **Purpose:** OpenCode's original auth storage
+- **Note:** Plugin imports from here on first run if no accounts exist
 
 ### Cache Files
 - **Location:** `~/.opencode/cache/`
@@ -103,7 +113,7 @@ You have complete control over your data:
 ```bash
 opencode auth logout
 # Or manually:
-rm ~/.opencode/auth/openai.json
+rm ~/.config/opencode/openai-accounts.json
 ```
 
 ### Delete Cache Files
@@ -196,6 +206,6 @@ For privacy-related questions:
 
 ---
 
-**Last Updated:** 2025-10-12
+**Last Updated:** 2026-01-15
 
 **Back to:** [Documentation Home](index.md) | [Getting Started](getting-started.md)
