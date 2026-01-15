@@ -10,9 +10,9 @@
 
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/nummanali?style=social)](https://x.com/nummanali)
-[![npm version](https://img.shields.io/npm/v/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
+[![npm version](https://img.shields.io/npm/v/@zenystx-org/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/@zenystx-org/opencode-openai-multi-auth)
 [![Tests](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions)
-[![npm downloads](https://img.shields.io/npm/dm/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
+[![npm downloads](https://img.shields.io/npm/dm/@zenystx-org/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/@zenystx-org/opencode-openai-multi-auth)
 **One install. Every Codex model. Multi-account ready.**
 [Install](#-quick-start) · [Models](#-models) · [Configuration](#-configuration) · [Docs](#-docs)
 
@@ -38,7 +38,7 @@
 ## 🚀 Quick Start
 
 ```bash
-npx -y opencode-openai-multi-auth@latest
+npx -y @zenystx-org/opencode-openai-multi-auth@latest
 ```
 
 Then:
