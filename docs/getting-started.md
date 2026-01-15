@@ -309,11 +309,28 @@ opencode auth login
 2. Choose **"ChatGPT Plus/Pro (Codex Subscription)"**
 3. Browser opens automatically for OAuth flow
 4. Log in with your ChatGPT account
-5. Done! Token saved to `~/.opencode/auth/openai.json`
+5. Done! Token saved and account added to multi-account storage
 
 **⚠️ Important**: If you have the official Codex CLI running, stop it first (both use port 1455 for OAuth callback).
 
 **Manual fallback**: On SSH/WSL/remote environments, pick **"ChatGPT Plus/Pro (Manual URL Paste)"** and paste the full redirect URL after login.
+
+### Step 2b: Add Multiple Accounts (Optional)
+
+Add additional ChatGPT accounts to automatically rotate when rate limited:
+
+```bash
+opencode auth login
+# Select "Add Another OpenAI Account"
+```
+
+**Benefits of multiple accounts:**
+- Automatic failover when one account hits rate limits
+- Per-model rate limit tracking
+- Toast notifications showing active account
+- Seamless rotation between accounts
+
+**Account storage:** `~/.config/opencode/openai-accounts.json`
 
 ### Step 3: Test It
 
@@ -406,8 +423,8 @@ opencode --version
 ### Check Authentication
 
 ```bash
-cat ~/.opencode/auth/openai.json
-# Should show OAuth credentials (if authenticated)
+cat ~/.config/opencode/openai-accounts.json
+# Should show your accounts with OAuth credentials
 ```
 
 ### Test API Access

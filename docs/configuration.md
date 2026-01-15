@@ -389,6 +389,67 @@ CODEX_MODE=0 opencode run "task"  # Temporarily disable
 CODEX_MODE=1 opencode run "task"  # Temporarily enable
 ```
 
+---
+
+## Multi-Account Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENCODE_OPENAI_QUIET=1` | Disable toast notifications | Off |
+| `OPENCODE_OPENAI_DEBUG=1` | Enable debug logging for multi-account | Off |
+| `OPENCODE_OPENAI_STRATEGY` | Account selection strategy | `sticky` |
+| `OPENCODE_OPENAI_PID_OFFSET=1` | Enable PID-based account offset | Off |
+
+### Account Selection Strategies
+
+| Strategy | Behavior |
+|----------|----------|
+| `sticky` | Stay with current account until rate limited (default) |
+| `round-robin` | Rotate through accounts on each request |
+| `hybrid` | Sticky within session, round-robin across sessions |
+
+### Account Storage
+
+Accounts are stored in `~/.config/opencode/openai-accounts.json`:
+
+```json
+{
+  "version": 1,
+  "accounts": [
+    {
+      "index": 0,
+      "email": "user@example.com",
+      "planType": "plus",
+      "parts": { "refreshToken": "..." },
+      "rateLimitResets": {},
+      "consecutiveFailures": 0
+    }
+  ],
+  "activeAccountIndex": 0
+}
+```
+
+### Adding Multiple Accounts
+
+```bash
+# First account
+opencode auth login
+# Select "ChatGPT Plus/Pro (Codex Subscription)"
+
+# Additional accounts
+opencode auth login
+# Select "Add Another OpenAI Account"
+```
+
+### Rate Limit Handling
+
+- Per-model rate limits tracked separately
+- Automatic rotation to next available account
+- Toast notifications show rate limit status
+- Accounts with 3+ consecutive failures are skipped
+
 ### Prompt caching
 
 - When OpenCode provides a `prompt_cache_key` (its session identifier), the plugin forwards it directly to Codex.
