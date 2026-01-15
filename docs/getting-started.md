@@ -21,7 +21,6 @@ For production applications, use the [OpenAI Platform API](https://platform.open
 ## Installation
 
 
-
 ### One-Command Install/Update (Recommended)
 
 Works on **Windows, macOS, and Linux**:

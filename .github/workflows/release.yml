@@ -10,46 +10,70 @@ on:
         required: false
         default: false
         type: boolean
+      force_release:
+        description: 'Force release even if version exists'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  check-version:
-    name: Check Version Change
+  check-release:
+    name: Check Release Conditions
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
+      release_type: ${{ steps.check.outputs.release_type }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Check if version changed
+      - name: Check release conditions
         id: check
         run: |
+          # Check for [skip release] in commit message
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -qi "\[skip release\]"; then
+            echo "Commit contains [skip release], skipping"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "version=" >> $GITHUB_OUTPUT
+            echo "release_type=skip" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           # Get current version from package.json
           CURRENT_VERSION=$(jq -r '.version' package.json)
           echo "Current version: $CURRENT_VERSION"
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           
           # Check if tag already exists
           if git ls-remote --tags origin | grep -q "refs/tags/v$CURRENT_VERSION"; then
-            echo "Tag v$CURRENT_VERSION already exists, skipping release"
-            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "Tag v$CURRENT_VERSION already exists"
+            if [ "${{ github.event.inputs.force_release }}" == "true" ]; then
+              echo "Force release requested, proceeding anyway"
+              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "release_type=force" >> $GITHUB_OUTPUT
+            else
+              echo "Skipping release (use workflow_dispatch with force_release to override)"
+              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "release_type=exists" >> $GITHUB_OUTPUT
+            fi
           else
             echo "New version detected: $CURRENT_VERSION"
             echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=new" >> $GITHUB_OUTPUT
           fi
-          
-          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true' && github.event.inputs.skip_tests != 'true'
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true' && github.event.inputs.skip_tests != 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,10 +96,10 @@ jobs:
   release:
     name: Create Release & Publish
     runs-on: ubuntu-latest
-    needs: [check-version, test]
+    needs: [check-release, test]
     if: |
       always() &&
-      needs.check-version.outputs.should_release == 'true' &&
+      needs.check-release.outputs.should_release == 'true' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped')
     steps:
       - name: Checkout code
@@ -98,8 +122,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: v${{ needs.check-version.outputs.version }}
-          name: v${{ needs.check-version.outputs.version }}
+          tag_name: v${{ needs.check-release.outputs.version }}
+          name: v${{ needs.check-release.outputs.version }}
           draft: false
           generate_release_notes: true
 
