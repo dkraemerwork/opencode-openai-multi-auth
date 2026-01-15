@@ -10,9 +10,9 @@
 
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/nummanali?style=social)](https://x.com/nummanali)
-[![npm version](https://img.shields.io/npm/v/@zenystx-org/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/@zenystx-org/opencode-openai-multi-auth)
+[![npm version](https://img.shields.io/npm/v/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
 [![Tests](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions)
-[![npm downloads](https://img.shields.io/npm/dm/@zenystx-org/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/@zenystx-org/opencode-openai-multi-auth)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
 **One install. Every Codex model. Multi-account ready.**
 [Install](#-quick-start) · [Models](#-models) · [Configuration](#-configuration) · [Docs](#-docs)
 
@@ -38,7 +38,7 @@
 ## 🚀 Quick Start
 
 ```bash
-npx -y @zenystx-org/opencode-openai-multi-auth@latest
+npx -y opencode-openai-multi-auth@latest
 ```
 
 Then:
@@ -51,15 +51,15 @@ opencode run "write hello world to test.txt" --model=openai/gpt-5.2 --variant=me
 Legacy OpenCode (v1.0.209 and below):
 
 ```bash
-npx -y @zenystx-org/opencode-openai-multi-auth@latest --legacy
+npx -y opencode-openai-multi-auth@latest --legacy
 opencode run "write hello world to test.txt" --model=openai/gpt-5.2-medium
 ```
 
 Uninstall:
 
 ```bash
-npx -y @zenystx-org/opencode-openai-multi-auth@latest --uninstall
-npx -y @zenystx-org/opencode-openai-multi-auth@latest --uninstall --all
+npx -y opencode-openai-multi-auth@latest --uninstall
+npx -y opencode-openai-multi-auth@latest --uninstall --all
 ```
 
 ---

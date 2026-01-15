@@ -1,5 +1,5 @@
 {
-  "name": "@zenystx-org/opencode-openai-multi-auth",
+  "name": "opencode-openai-multi-auth",
   "version": "5.0.0",
   "description": "OpenAI ChatGPT OAuth plugin for opencode with multi-account rotation on rate limits",
   "main": "./dist/index.js",

@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@zenystx-org/opencode-openai-multi-auth"],
+  "plugin": ["opencode-openai-multi-auth"],
   "provider": {
     "openai": {
       "options": {
