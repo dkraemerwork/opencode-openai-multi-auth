@@ -37,7 +37,7 @@ describe('Install script', () => {
 			'opencode.jsonc',
 			`{
   // My existing config
-  "plugin": ["some-other-plugin@1.2.3", "opencode-openai-codex-auth@4.2.0"],
+  "plugin": ["some-other-plugin@1.2.3", "opencode-openai-multi-auth@4.2.0"],
   "provider": {
     "openai": {
       "timeout": 60000,
@@ -51,7 +51,7 @@ describe('Install script', () => {
 
 		const { content, data } = readJsoncFile(configPath);
 		expect(content).toContain('// My existing config');
-		expect(data.plugin).toContain('opencode-openai-codex-auth');
+		expect(data.plugin).toContain('opencode-openai-multi-auth');
 		expect(data.plugin).toContain('some-other-plugin@1.2.3');
 		expect(data.provider.openai.timeout).toBe(60000);
 		expect(data.provider.openai.models['custom-model']).toBeDefined();
@@ -63,7 +63,7 @@ describe('Install script', () => {
 		const jsoncPath = writeConfig(
 			homeDir,
 			'opencode.jsonc',
-			`{ "plugin": ["opencode-openai-codex-auth@4.2.0"] }`,
+			`{ "plugin": ["opencode-openai-multi-auth@4.2.0"] }`,
 		);
 		const jsonPath = writeConfig(
 			homeDir,
@@ -75,7 +75,7 @@ describe('Install script', () => {
 		runInstaller(['--no-cache-clear'], homeDir);
 
 		const { data } = readJsoncFile(jsoncPath);
-		expect(data.plugin).toContain('opencode-openai-codex-auth');
+		expect(data.plugin).toContain('opencode-openai-multi-auth');
 		const jsonAfter = readFileSync(jsonPath, 'utf-8');
 		expect(jsonAfter).toBe(jsonBefore);
 	});
@@ -86,7 +86,7 @@ describe('Install script', () => {
 		const configPath = join(homeDir, '.config', 'opencode', 'opencode.jsonc');
 		expect(existsSync(configPath)).toBe(true);
 		const { data } = readJsoncFile(configPath);
-		expect(data.plugin).toContain('opencode-openai-codex-auth');
+		expect(data.plugin).toContain('opencode-openai-multi-auth');
 	});
 
 	it('uninstall removes plugin models but keeps custom config', () => {
@@ -95,7 +95,7 @@ describe('Install script', () => {
 			homeDir,
 			'opencode.jsonc',
 			`{
-  "plugin": ["some-other-plugin@1.2.3", "opencode-openai-codex-auth@4.2.0"],
+  "plugin": ["some-other-plugin@1.2.3", "opencode-openai-multi-auth@4.2.0"],
   "provider": {
     "openai": {
       "timeout": 60000,
@@ -126,7 +126,7 @@ describe('Install script', () => {
 		writeConfig(
 			homeDir,
 			'opencode.jsonc',
-			`{ "plugin": ["opencode-openai-codex-auth@4.2.0"] }`,
+			`{ "plugin": ["opencode-openai-multi-auth@4.2.0"] }`,
 		);
 
 		const opencodeDir = join(homeDir, '.opencode');

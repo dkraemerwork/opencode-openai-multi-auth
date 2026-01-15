@@ -1,11 +1,11 @@
-![Image 1: opencode-openai-codex-auth](assets/readme-hero.svg)
+![Image 1: opencode-openai-multi-auth](assets/readme-hero.svg)
   
   
 **Curated by [Numman Ali](https://x.com/nummanali)**
 [![Twitter Follow](https://img.shields.io/twitter/follow/nummanali?style=social)](https://x.com/nummanali)
-[![npm version](https://img.shields.io/npm/v/opencode-openai-codex-auth.svg)](https://www.npmjs.com/package/opencode-openai-codex-auth)
-[![Tests](https://github.com/numman-ali/opencode-openai-codex-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/numman-ali/opencode-openai-codex-auth/actions)
-[![npm downloads](https://img.shields.io/npm/dm/opencode-openai-codex-auth.svg)](https://www.npmjs.com/package/opencode-openai-codex-auth)
+[![npm version](https://img.shields.io/npm/v/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
+[![Tests](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
 **One install. Every Codex model.**
 [Install](#-quick-start) · [Models](#-models) · [Configuration](#-configuration) · [Docs](#-docs)
 
@@ -24,7 +24,7 @@ OpenCode should feel effortless. This plugin keeps the setup minimal while givin
 ---
 ## 🚀 Quick Start
 ```bash
-npx -y opencode-openai-codex-auth@latest
+npx -y opencode-openai-multi-auth@latest
 ```
 Then:
 ```bash
@@ -33,13 +33,13 @@ opencode run "write hello world to test.txt" --model=openai/gpt-5.2 --variant=me
 ```
 Legacy OpenCode (v1.0.209 and below):
 ```bash
-npx -y opencode-openai-codex-auth@latest --legacy
+npx -y opencode-openai-multi-auth@latest --legacy
 opencode run "write hello world to test.txt" --model=openai/gpt-5.2-medium
 ```
 Uninstall:
 ```bash
-npx -y opencode-openai-codex-auth@latest --uninstall
-npx -y opencode-openai-codex-auth@latest --uninstall --all
+npx -y opencode-openai-multi-auth@latest --uninstall
+npx -y opencode-openai-multi-auth@latest --uninstall --all
 ```
 ---
 ## 📦 Models

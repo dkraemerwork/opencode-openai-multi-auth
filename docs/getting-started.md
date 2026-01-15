@@ -25,7 +25,7 @@ For production applications, use the [OpenAI Platform API](https://platform.open
 Works on **Windows, macOS, and Linux**:
 
 ```bash
-npx -y opencode-openai-codex-auth@latest
+npx -y opencode-openai-multi-auth@latest
 ```
 
 This writes the **global** config at `~/.config/opencode/opencode.jsonc` (falls back to `.json` if needed), backs it up, and clears the OpenCode plugin cache so the latest version installs.
@@ -33,7 +33,7 @@ This writes the **global** config at `~/.config/opencode/opencode.jsonc` (falls 
 Need legacy config (OpenCode v1.0.209 and below)?
 
 ```bash
-npx -y opencode-openai-codex-auth@latest --legacy
+npx -y opencode-openai-multi-auth@latest --legacy
 ```
 
 ---
@@ -61,7 +61,7 @@ Add this to `~/.config/opencode/opencode.jsonc` (or `.json`):
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-openai-codex-auth"],
+  "plugin": ["opencode-openai-multi-auth"],
   "provider": {
     "openai": {
       "options": {
@@ -289,7 +289,7 @@ Prompt caching is enabled out of the box: when OpenCode sends its session identi
 // ❌ DO NOT USE THIS
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-openai-codex-auth"],
+  "plugin": ["opencode-openai-multi-auth"],
   "model": "openai/gpt-5-codex"
 }
 ```
@@ -346,20 +346,20 @@ OpenCode checks multiple config files in order:
 OpenCode caches plugins. To install the latest version, just re-run the installer:
 
 ```bash
-npx -y opencode-openai-codex-auth@latest
+npx -y opencode-openai-multi-auth@latest
 ```
 
 Legacy OpenCode (v1.0.209 and below):
 
 ```bash
-npx -y opencode-openai-codex-auth@latest --legacy
+npx -y opencode-openai-multi-auth@latest --legacy
 ```
 
 ## Uninstall
 
 ```bash
-npx -y opencode-openai-codex-auth@latest --uninstall
-npx -y opencode-openai-codex-auth@latest --uninstall --all
+npx -y opencode-openai-multi-auth@latest --uninstall
+npx -y opencode-openai-multi-auth@latest --uninstall --all
 ```
 
 **When to update:**
@@ -367,7 +367,7 @@ npx -y opencode-openai-codex-auth@latest --uninstall --all
 - Bug fixes available
 - Security updates
 
-**Check for updates**: [Releases Page](https://github.com/numman-ali/opencode-openai-codex-auth/releases)
+**Check for updates**: [Releases Page](https://github.com/dkraemerwork/opencode-openai-multi-auth/releases)
 
 **Pro tip**: Subscribe to release notifications on GitHub to get notified of updates.
 
@@ -379,7 +379,7 @@ For plugin development or testing unreleased changes:
 
 ```json
 {
-  "plugin": ["file:///absolute/path/to/opencode-openai-codex-auth/dist"]
+  "plugin": ["file:///absolute/path/to/opencode-openai-multi-auth/dist"]
 }
 ```
 
@@ -387,7 +387,7 @@ For plugin development or testing unreleased changes:
 
 **Build the plugin:**
 ```bash
-cd opencode-openai-codex-auth
+cd opencode-openai-multi-auth
 npm install
 npm run build
 ```

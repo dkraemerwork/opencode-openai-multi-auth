@@ -2,8 +2,8 @@
 
 > Access GPT-5 Codex through your ChatGPT Plus/Pro subscription in OpenCode
 
-[![npm version](https://badge.fury.io/js/opencode-openai-codex-auth.svg)](https://www.npmjs.com/package/opencode-openai-codex-auth)
-[![Tests](https://github.com/numman-ali/opencode-openai-codex-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/numman-ali/opencode-openai-codex-auth/actions)
+[![npm version](https://badge.fury.io/js/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
+[![Tests](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions)
 
 > **Found this useful?**
 > Follow me on [X @nummanali](https://x.com/nummanali) for future updates and more projects!
@@ -25,7 +25,7 @@ Users are responsible for compliance with [OpenAI's Terms of Use](https://openai
 - [Configuration Guide](configuration.md) - Advanced config options and patterns
 - [Troubleshooting](troubleshooting.md) - Debug techniques and common issues
 - [Privacy & Data Handling](privacy.md) - How your data is handled and protected
-- [Release Notes](https://github.com/numman-ali/opencode-openai-codex-auth/releases) - Version history and updates
+- [Release Notes](https://github.com/dkraemerwork/opencode-openai-multi-auth/releases) - Version history and updates
 
 ### For Developers
 Explore the engineering depth behind this plugin:
@@ -43,13 +43,13 @@ Explore the engineering depth behind this plugin:
 One-command install/update (global config):
 
 ```bash
-npx -y opencode-openai-codex-auth@latest
+npx -y opencode-openai-multi-auth@latest
 ```
 
 Legacy OpenCode (v1.0.209 and below):
 
 ```bash
-npx -y opencode-openai-codex-auth@latest --legacy
+npx -y opencode-openai-multi-auth@latest --legacy
 ```
 
 Then run OpenCode and authenticate:
@@ -70,7 +70,7 @@ If the browser callback fails (SSH/WSL/remote), choose **"ChatGPT Plus/Pro (Manu
 Re-run the installer to update:
 
 ```bash
-npx -y opencode-openai-codex-auth@latest
+npx -y opencode-openai-multi-auth@latest
 ```
 
 ### Quick Test
@@ -138,9 +138,9 @@ This plugin represents significant engineering effort to bridge OpenCode and the
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/numman-ali/opencode-openai-codex-auth/issues)
-- **Releases**: [Release Notes](https://github.com/numman-ali/opencode-openai-codex-auth/releases)
-- **Main Repo**: [GitHub](https://github.com/numman-ali/opencode-openai-codex-auth)
+- **Issues**: [GitHub Issues](https://github.com/dkraemerwork/opencode-openai-multi-auth/issues)
+- **Releases**: [Release Notes](https://github.com/dkraemerwork/opencode-openai-multi-auth/releases)
+- **Main Repo**: [GitHub](https://github.com/dkraemerwork/opencode-openai-multi-auth)
 
 ---
 
