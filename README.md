@@ -1,12 +1,14 @@
 ![Image 1: opencode-openai-multi-auth](assets/readme-hero.svg)
   
   
-**Curated by [Numman Ali](https://x.com/nummanali)**
+**Maintained by [ZenysTX](https://x.com/zenysTX)**
+**Most of the work and original implementation by [Numman Ali](https://x.com/nummanali)**
+[![Twitter Follow](https://img.shields.io/twitter/follow/zenysTX?style=social)](https://x.com/zenysTX)
 [![Twitter Follow](https://img.shields.io/twitter/follow/nummanali?style=social)](https://x.com/nummanali)
 [![npm version](https://img.shields.io/npm/v/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
 [![Tests](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/dkraemerwork/opencode-openai-multi-auth/actions)
 [![npm downloads](https://img.shields.io/npm/dm/opencode-openai-multi-auth.svg)](https://www.npmjs.com/package/opencode-openai-multi-auth)
-**One install. Every Codex model.**
+**One install. Every Codex model. Multi-account ready.**
 [Install](#-quick-start) · [Models](#-models) · [Configuration](#-configuration) · [Docs](#-docs)
 
 ---
@@ -58,11 +60,14 @@ Minimal configs are not supported for GPT‑5.x; use the full configs above.
 ---
 ## ✅ Features
 - ChatGPT Plus/Pro OAuth authentication (official flow)
+- Multi-account support with automatic rotation on rate limits
 - 22 model presets across GPT‑5.2 / GPT‑5.2 Codex / GPT‑5.1 families
 - Variant system support (v1.0.210+) + legacy presets
 - Multimodal input enabled for all models
 - Usage‑aware errors + automatic token refresh
+
 ---
+
 ## 📚 Docs
 - Getting Started: `docs/getting-started.md`
 - Configuration: `docs/configuration.md`
