@@ -433,4 +433,77 @@ export class AccountManager {
     if (this.accounts.length === 0) return null;
     return this.accounts[this.activeIndex] || this.accounts[0];
   }
+
+  /**
+   * Get the next available account excluding the specified account indices.
+   * Used for model fallback retry logic - try other accounts before falling back to older model.
+   */
+  async getNextAvailableAccountExcluding(
+    excludeIndices: Set<number>,
+    model?: string,
+  ): Promise<ManagedAccount | null> {
+    if (this.accounts.length === 0) return null;
+
+    const now = Date.now();
+
+    // Try to find an available account that's not in the exclusion list
+    for (const account of this.accounts) {
+      if (excludeIndices.has(account.index)) continue;
+      if (this.isAccountAvailable(account, model, now)) {
+        this.activeIndex = account.index;
+        account.lastUsed = now;
+        return account;
+      }
+    }
+
+    // If no available accounts, try to get least rate-limited that's not excluded
+    let bestAccount: ManagedAccount | null = null;
+    let earliestReset = Infinity;
+
+    for (const account of this.accounts) {
+      if (excludeIndices.has(account.index)) continue;
+      if (account.consecutiveFailures >= 3) continue;
+
+      let resetTime = account.globalRateLimitReset || 0;
+      if (model && this.config.perModelRateLimits) {
+        const modelReset = account.rateLimitResets[model] || 0;
+        resetTime = Math.max(resetTime, modelReset);
+      }
+
+      if (resetTime < earliestReset) {
+        earliestReset = resetTime;
+        bestAccount = account;
+      }
+    }
+
+    if (bestAccount) {
+      this.activeIndex = bestAccount.index;
+      bestAccount.lastUsed = now;
+    }
+
+    return bestAccount;
+  }
+
+  /**
+   * Check if an account supports a specific model based on plan type.
+   * GPT-5.3-codex requires Plus/Pro/Team - free accounts don't support it.
+   */
+  accountSupportsModel(account: ManagedAccount, model: string): boolean {
+    // gpt-5.3-* models require paid plans
+    if (model.startsWith("gpt-5.3")) {
+      const planType = account.planType?.toLowerCase();
+      if (planType === "free") {
+        return false;
+      }
+      // If plan type is unknown, assume it might work
+    }
+    return true;
+  }
+
+  /**
+   * Get accounts that might support a model (non-free for gpt-5.3-*)
+   */
+  getAccountsSupportingModel(model: string): ManagedAccount[] {
+    return this.accounts.filter((acc) => this.accountSupportsModel(acc, model));
+  }
 }

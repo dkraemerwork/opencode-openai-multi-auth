@@ -19,6 +19,7 @@ import {
   LOG_STAGES,
   PROVIDER_ID,
   HTTP_STATUS,
+  MODEL_FALLBACKS,
 } from "./lib/constants.js";
 import { logRequest, logDebug } from "./lib/logger.js";
 import {
@@ -33,6 +34,7 @@ import type { UserConfig } from "./lib/types.js";
 import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
 import { codexStatus } from "./lib/codex-status.js";
+import { prefetchModels } from "./lib/models.js";
 
 function extractModelFromBody(body: string | undefined): string | undefined {
   if (!body) return undefined;
@@ -47,6 +49,9 @@ function extractModelFromBody(body: string | undefined): string | undefined {
 let lastToastAccountIndex: number | null = null;
 let lastToastTime = 0;
 const TOAST_DEBOUNCE_MS = 5000;
+
+/** Track which models we've already shown fallback notifications for */
+const notifiedFallbacks = new Set<string>();
 
 export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
   const quietMode = process.env.OPENCODE_OPENAI_QUIET === "1";
@@ -116,6 +121,25 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
         body: {
           message: `Using ${accountLabel}${planLabel} (${account.index + 1}/${totalAccounts})`,
           variant: "info",
+        },
+      });
+    } catch {}
+  };
+
+  const showModelFallbackToast = async (
+    originalModel: string,
+    fallbackModel: string,
+  ) => {
+    if (quietMode) return;
+    // Only show once per model to avoid spam
+    const key = `${originalModel}->${fallbackModel}`;
+    if (notifiedFallbacks.has(key)) return;
+    notifiedFallbacks.add(key);
+    try {
+      await client.tui.showToast({
+        body: {
+          message: `${originalModel} not available yet. Using ${fallbackModel} instead.`,
+          variant: "warning",
         },
       });
     } catch {}
@@ -252,13 +276,16 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           input: Request | string | URL,
           init: RequestInit | undefined,
           retryCount = 0,
+          triedAccountIndices: Set<number> = new Set(),
         ): Promise<Response> => {
+          // Track this account as tried
+          triedAccountIndices.add(account.index);
           const isTokenValid = await accountManager.ensureValidToken(account);
           if (!isTokenValid) {
-            const nextAccount = await accountManager.getNextAvailableAccount();
+            const nextAccount = await accountManager.getNextAvailableAccountExcluding(triedAccountIndices);
             if (nextAccount && nextAccount.index !== account.index) {
               await showAccountSwitchToast(account, nextAccount);
-              return executeRequest(nextAccount, input, init, retryCount);
+              return executeRequest(nextAccount, input, init, retryCount, triedAccountIndices);
             }
             return new Response(
               JSON.stringify({ error: "All accounts failed token refresh" }),
@@ -304,6 +331,14 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                 headers: { "Content-Type": "application/json" },
               },
             );
+          }
+
+          // Pre-fetch models to "register" client with backend
+          // This may help unlock access to newer models like gpt-5.3-codex
+          try {
+            await prefetchModels(account.access || "", accountId);
+          } catch {
+            // Ignore errors - this is a best-effort optimization
           }
 
           const headers = createCodexHeaders(
@@ -382,10 +417,10 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
             if (retryCount < accountManager.getAccountCount() - 1) {
               const nextAccount =
-                await accountManager.getNextAvailableAccount(model);
+                await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
               if (nextAccount && nextAccount.index !== account.index) {
                 await showAccountSwitchToast(account, nextAccount);
-                return executeRequest(nextAccount, input, init, retryCount + 1);
+                return executeRequest(nextAccount, input, init, retryCount + 1, triedAccountIndices);
               }
             }
           }
@@ -393,10 +428,67 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           if (response.status === HTTP_STATUS.UNAUTHORIZED && retryCount < 1) {
             accountManager.markRefreshFailed(account, "401 Unauthorized");
             const nextAccount =
-              await accountManager.getNextAvailableAccount(model);
+              await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
             if (nextAccount && nextAccount.index !== account.index) {
               await showAccountSwitchToast(account, nextAccount);
-              return executeRequest(nextAccount, input, init, retryCount + 1);
+              return executeRequest(nextAccount, input, init, retryCount + 1, triedAccountIndices);
+            }
+          }
+
+          // Handle model not supported errors (400 Bad Request with specific message)
+          if (response.status === 400) {
+            try {
+              const cloned = response.clone();
+              const errorBody = await cloned.json() as { detail?: string; error?: { message?: string } };
+              const detail = errorBody?.detail || errorBody?.error?.message || "";
+              
+              // Log the error for debugging
+              if (debugMode) {
+                console.log(`[openai-multi-auth] 400 error for model ${transformation?.body.model} on account ${account.email || account.index} [${account.planType}]: ${JSON.stringify(errorBody)}`);
+              }
+              
+              // Check if it's a "model not supported" error
+              if (detail.includes("model is not supported") || detail.includes("not supported when using Codex")) {
+                const requestedModel = transformation?.body.model || model;
+                
+                // STEP 1: Try other accounts first (they might be Plus/Pro/Team and support the model)
+                const nextAccount = await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, requestedModel);
+                if (nextAccount) {
+                  if (debugMode) {
+                    console.log(`[openai-multi-auth] Model ${requestedModel} not supported on ${account.email || account.index} [${account.planType}], trying ${nextAccount.email || nextAccount.index} [${nextAccount.planType}]`);
+                  }
+                  await showAccountSwitchToast(account, nextAccount);
+                  return executeRequest(nextAccount, input, init, retryCount, triedAccountIndices);
+                }
+                
+                // STEP 2: All accounts tried - fall back to older model
+                const fallbackModel = MODEL_FALLBACKS[requestedModel];
+                if (fallbackModel) {
+                  if (debugMode) {
+                    console.log(`[openai-multi-auth] All ${triedAccountIndices.size} accounts tried for ${requestedModel}, falling back to ${fallbackModel}`);
+                  }
+                  await showModelFallbackToast(requestedModel, fallbackModel);
+                  
+                  // Retry with fallback model using first available account (reset tried accounts for new model)
+                  const modifiedBody = JSON.parse(init?.body as string || "{}");
+                  modifiedBody.model = fallbackModel;
+                  const modifiedInit = {
+                    ...init,
+                    body: JSON.stringify(modifiedBody),
+                  };
+                  
+                  // Get first available account for the fallback model
+                  const fallbackAccount = await accountManager.getNextAvailableAccount(fallbackModel);
+                  if (fallbackAccount) {
+                    // Reset tried accounts for the new model
+                    return executeRequest(fallbackAccount, input, modifiedInit, 0, new Set());
+                  }
+                  // If no account available, use current account
+                  return executeRequest(account, input, modifiedInit, retryCount + 1, new Set());
+                }
+              }
+            } catch {
+              // If parsing fails, continue with normal error handling
             }
           }
 

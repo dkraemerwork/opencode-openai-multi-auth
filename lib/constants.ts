@@ -6,6 +6,9 @@
 /** Plugin identifier for logging and error messages */
 export const PLUGIN_NAME = "openai-codex-plugin";
 
+/** Plugin version - used for client_version query parameter */
+export const PLUGIN_VERSION = "0.98.0";
+
 /** Base URL for ChatGPT backend API */
 export const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 
@@ -30,6 +33,7 @@ export const OPENAI_HEADERS = {
 	ORIGINATOR: "originator",
 	SESSION_ID: "session_id",
 	CONVERSATION_ID: "conversation_id",
+	VERSION: "version",
 } as const;
 
 /** OpenAI-specific header values */
@@ -38,10 +42,22 @@ export const OPENAI_HEADER_VALUES = {
 	ORIGINATOR_CODEX: "codex_cli_rs",
 } as const;
 
+/** Codex CLI originator value */
+export const CODEX_ORIGINATOR = "codex_cli_rs";
+
 /** URL path segments */
 export const URL_PATHS = {
 	RESPONSES: "/responses",
 	CODEX_RESPONSES: "/codex/responses",
+	CODEX_MODELS: "/codex/models",
+} as const;
+
+/** Model fallback map - when a model isn't available, fall back to this */
+export const MODEL_FALLBACKS: Record<string, string> = {
+	"gpt-5.3-codex": "gpt-5.2-codex",
+	"gpt-5.3-codex-max": "gpt-5.1-codex-max",
+	"gpt-5.3-codex-mini": "gpt-5.1-codex-mini",
+	"gpt-5.3": "gpt-5.2",
 } as const;
 
 /** JWT claim path for ChatGPT account ID */

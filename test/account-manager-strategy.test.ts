@@ -137,4 +137,48 @@ describe("AccountManager strategy selection", () => {
     expect(second?.index).toBe(first?.index);
     expect(third?.index).toBe(first?.index);
   });
+
+  it("excludes specified accounts when using getNextAvailableAccountExcluding", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-exclude-"));
+    const manager = await createManager(home, "sticky");
+    await manager.loadFromDisk();
+
+    await manager.addAccount("a@example.com", "rt-1");
+    await manager.addAccount("b@example.com", "rt-2");
+    await manager.addAccount("c@example.com", "rt-3");
+
+    // Exclude account 0
+    const excludeFirst = new Set([0]);
+    const pick1 = await manager.getNextAvailableAccountExcluding(excludeFirst);
+    expect(pick1?.index).toBe(1);
+
+    // Exclude accounts 0 and 1
+    const excludeFirstTwo = new Set([0, 1]);
+    const pick2 = await manager.getNextAvailableAccountExcluding(excludeFirstTwo);
+    expect(pick2?.index).toBe(2);
+
+    // Exclude all accounts - should return null
+    const excludeAll = new Set([0, 1, 2]);
+    const pick3 = await manager.getNextAvailableAccountExcluding(excludeAll);
+    expect(pick3).toBeNull();
+  });
+
+  it("getNextAvailableAccountExcluding respects rate limits", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-exclude-ratelimit-"));
+    const manager = await createManager(home, "sticky");
+    await manager.loadFromDisk();
+
+    await manager.addAccount("a@example.com", "rt-1");
+    await manager.addAccount("b@example.com", "rt-2");
+    await manager.addAccount("c@example.com", "rt-3");
+
+    // Rate limit account 1
+    const accounts = manager.getAllAccounts();
+    manager.markRateLimited(accounts[1], 60_000, "gpt-5.3-codex");
+
+    // Exclude account 0, should skip rate-limited account 1 and return account 2
+    const excludeFirst = new Set([0]);
+    const pick = await manager.getNextAvailableAccountExcluding(excludeFirst, "gpt-5.3-codex");
+    expect(pick?.index).toBe(2);
+  });
 });

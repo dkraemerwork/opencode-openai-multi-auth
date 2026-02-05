@@ -3,6 +3,7 @@
  * These functions break down the complex fetch logic into manageable, testable units
  */
 
+import { release as osRelease } from "node:os";
 import type { Auth } from "@opencode-ai/sdk";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 import { refreshAccessToken } from "../auth/auth.js";
@@ -13,9 +14,11 @@ import { convertSseToJson, ensureContentType } from "./response-handler.js";
 import type { UserConfig, RequestBody } from "../types.js";
 import {
 	PLUGIN_NAME,
+	PLUGIN_VERSION,
 	HTTP_STATUS,
 	OPENAI_HEADERS,
 	OPENAI_HEADER_VALUES,
+	CODEX_ORIGINATOR,
 	URL_PATHS,
 	ERROR_MESSAGES,
 	LOG_STAGES,
@@ -81,11 +84,14 @@ export function extractRequestUrl(input: Request | string | URL): string {
 
 /**
  * Rewrites OpenAI API URLs to Codex backend URLs
+ * Adds client_version query parameter to match Codex CLI behavior
  * @param url - Original URL
- * @returns Rewritten URL for Codex backend
+ * @returns Rewritten URL for Codex backend with client_version
  */
 export function rewriteUrlForCodex(url: string): string {
-	return url.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES);
+	const rewrittenUrl = url.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES);
+	const separator = rewrittenUrl.includes("?") ? "&" : "?";
+	return `${rewrittenUrl}${separator}client_version=${PLUGIN_VERSION}`;
 }
 
 /**
@@ -164,6 +170,24 @@ export async function transformRequestForCodex(
 }
 
 /**
+ * Generates a Codex CLI-compatible User-Agent string
+ * Format: {originator}/{version} ({os_type} {os_version}; {arch}) {terminal}
+ * @returns User-Agent string
+ */
+function getCodexUserAgent(): string {
+	const platform = process.platform;
+	const arch = process.arch;
+	const osType = platform === "darwin" ? "Mac OS" : platform === "win32" ? "Windows" : "Linux";
+	// Convert Darwin kernel version to macOS version (24.x = macOS 15.x, 23.x = macOS 14.x, etc.)
+	const kernelVersion = osRelease();
+	const majorKernel = parseInt(kernelVersion.split(".")[0], 10);
+	const macOSMajor = majorKernel - 9; // Darwin 24 = macOS 15, Darwin 23 = macOS 14, etc.
+	const osVersion = platform === "darwin" ? `${macOSMajor}.0.0` : kernelVersion;
+	// Match exact Codex CLI format - use terminal name, not "opencode-plugin"
+	return `${CODEX_ORIGINATOR}/${PLUGIN_VERSION} (${osType} ${osVersion}; ${arch}) Terminal`;
+}
+
+/**
  * Creates headers for Codex API requests
  * @param init - Request init options
  * @param accountId - ChatGPT account ID
@@ -182,6 +206,8 @@ export function createCodexHeaders(
 	headers.set(OPENAI_HEADERS.ACCOUNT_ID, accountId);
 	headers.set(OPENAI_HEADERS.BETA, OPENAI_HEADER_VALUES.BETA_RESPONSES);
 	headers.set(OPENAI_HEADERS.ORIGINATOR, OPENAI_HEADER_VALUES.ORIGINATOR_CODEX);
+	headers.set(OPENAI_HEADERS.VERSION, PLUGIN_VERSION); // Required for gpt-5.3-codex
+	headers.set("User-Agent", getCodexUserAgent());
 
     const cacheKey = opts?.promptCacheKey;
     if (cacheKey) {
@@ -203,6 +229,12 @@ export function createCodexHeaders(
 export async function handleErrorResponse(
     response: Response,
 ): Promise<Response> {
+	try {
+		const cloned = response.clone();
+		const errorBody = await cloned.text();
+		console.error(`[${PLUGIN_NAME}] Error ${response.status}: ${errorBody}`);
+	} catch {}
+
 	const mapped = await mapUsageLimit404(response);
 	const finalResponse = mapped ?? response;
 

@@ -39,10 +39,17 @@ describe('Request Transformer Module', () => {
 			expect(normalizeModel('unknown-model')).toBe('gpt-5.1');
 		});
 
-		it('should pass through unknown gpt models', async () => {
-			expect(normalizeModel('gpt-4')).toBe('gpt-4');
+		it('should normalize gpt-5.3 models correctly', async () => {
 			expect(normalizeModel('gpt-5.3')).toBe('gpt-5.3');
 			expect(normalizeModel('gpt-5.3-codex')).toBe('gpt-5.3-codex');
+			expect(normalizeModel('gpt-5.3-codex-max')).toBe('gpt-5.3-codex-max');
+			expect(normalizeModel('gpt-5.3-codex-mini')).toBe('gpt-5.3-codex-mini');
+		});
+
+		it('should fallback unknown models to gpt-5.1', async () => {
+			// GPT-4 and other non-GPT-5 models are not supported by Codex backend
+			// They fall back to gpt-5.1 as the default
+			expect(normalizeModel('gpt-4')).toBe('gpt-5.1');
 		});
 
 		it('should return gpt-5.1 for undefined', async () => {

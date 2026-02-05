@@ -102,20 +102,24 @@ describe('Fetch Helpers Module', () => {
 	});
 
 	describe('rewriteUrlForCodex', () => {
-		it('should rewrite /responses to /codex/responses', () => {
+		it('should rewrite /responses to /codex/responses with client_version', () => {
 			const url = 'https://chatgpt.com/backend-api/responses';
-			expect(rewriteUrlForCodex(url)).toBe('https://chatgpt.com/backend-api/codex/responses');
+			const result = rewriteUrlForCodex(url);
+			expect(result).toContain('https://chatgpt.com/backend-api/codex/responses');
+			expect(result).toContain('client_version=');
 		});
 
-		it('should not modify URL without /responses', () => {
+		it('should add client_version to URL without /responses', () => {
 			const url = 'https://chatgpt.com/backend-api/other';
-			expect(rewriteUrlForCodex(url)).toBe(url);
+			const result = rewriteUrlForCodex(url);
+			expect(result).toContain('client_version=');
 		});
 
-		it('should only replace first occurrence', () => {
+		it('should only replace first occurrence and add client_version', () => {
 			const url = 'https://example.com/responses/responses';
 			const result = rewriteUrlForCodex(url);
-			expect(result).toBe('https://example.com/codex/responses/responses');
+			expect(result).toContain('https://example.com/codex/responses/responses');
+			expect(result).toContain('client_version=');
 		});
 	});
 

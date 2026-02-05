@@ -46,13 +46,37 @@ export function normalizeModel(model: string | undefined): string {
 	// like "GPT 5 Codex Low (ChatGPT Subscription)"
 	const normalized = modelId.toLowerCase();
 
-	// Pass through any explicit gpt-* model IDs
-	if (normalized.startsWith("gpt-")) {
-		return normalized;
+	// Priority order for pattern matching (most specific first):
+	// 1. GPT-5.3 Codex Max (newest codex max model)
+	if (
+		normalized.includes("gpt-5.3-codex-max") ||
+		normalized.includes("gpt 5.3 codex max")
+	) {
+		return "gpt-5.3-codex-max";
 	}
 
-	// Priority order for pattern matching (most specific first):
-	// 1. GPT-5.2 Codex (newest codex model)
+	// 2. GPT-5.3 Codex Mini
+	if (
+		normalized.includes("gpt-5.3-codex-mini") ||
+		normalized.includes("gpt 5.3 codex mini")
+	) {
+		return "gpt-5.3-codex-mini";
+	}
+
+	// 3. GPT-5.3 Codex (newest codex model)
+	if (
+		normalized.includes("gpt-5.3-codex") ||
+		normalized.includes("gpt 5.3 codex")
+	) {
+		return "gpt-5.3-codex";
+	}
+
+	// 4. GPT-5.3 (general purpose)
+	if (normalized.includes("gpt-5.3") || normalized.includes("gpt 5.3")) {
+		return "gpt-5.3";
+	}
+
+	// 5. GPT-5.2 Codex (newest codex model)
 	if (
 		normalized.includes("gpt-5.2-codex") ||
 		normalized.includes("gpt 5.2 codex")
@@ -60,7 +84,7 @@ export function normalizeModel(model: string | undefined): string {
 		return "gpt-5.2-codex";
 	}
 
-	// 2. GPT-5.2 (general purpose)
+	// 6. GPT-5.2 (general purpose)
 	if (normalized.includes("gpt-5.2") || normalized.includes("gpt 5.2")) {
 		return "gpt-5.2";
 	}
