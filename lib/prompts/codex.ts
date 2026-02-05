@@ -60,6 +60,17 @@ export function getModelFamily(normalizedModel: string): ModelFamily {
 	) {
 		return "gpt-5.2-codex";
 	}
+
+	const gpt5MinorMatch = normalizedModel.match(/gpt[- ]5\.(\d+)/);
+	if (gpt5MinorMatch) {
+		const minorVersion = Number.parseInt(gpt5MinorMatch[1] || "0", 10);
+		if (!Number.isNaN(minorVersion) && minorVersion >= 3) {
+			if (normalizedModel.includes("codex")) {
+				return "gpt-5.2-codex";
+			}
+			return "gpt-5.2";
+		}
+	}
 	if (normalizedModel.includes("codex-max")) {
 		return "codex-max";
 	}

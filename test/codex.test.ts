@@ -91,6 +91,16 @@ describe("Codex Module", () => {
 			it("should return gpt-5.2 for gpt-5.2-high", () => {
 				expect(getModelFamily("gpt-5.2-high")).toBe("gpt-5.2");
 			});
+
+			it("should return gpt-5.2 for gpt-5.3", () => {
+				expect(getModelFamily("gpt-5.3")).toBe("gpt-5.2");
+			});
+		});
+
+		describe("GPT-5.x codex fallback", () => {
+			it("should return gpt-5.2-codex for gpt-5.3-codex", () => {
+				expect(getModelFamily("gpt-5.3-codex")).toBe("gpt-5.2-codex");
+			});
 		});
 
 		describe("Priority order", () => {

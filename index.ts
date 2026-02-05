@@ -1,4 +1,4 @@
-import type { Plugin, PluginInput } from "@opencode-ai/plugin";
+import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin";
 import type { Auth } from "@opencode-ai/sdk";
 import {
   createAuthorizationFlow,
@@ -32,6 +32,7 @@ import {
 import type { UserConfig } from "./lib/types.js";
 import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
+import { codexStatus } from "./lib/codex-status.js";
 
 function extractModelFromBody(body: string | undefined): string | undefined {
   if (!body) return undefined;
@@ -320,6 +321,18 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             headers,
           });
 
+          try {
+            const headersObj: Record<string, string> = {};
+            response.headers.forEach((value, key) => {
+              headersObj[key] = value;
+            });
+            await codexStatus.updateFromHeaders(account, headersObj);
+          } catch (error) {
+            if (debugMode) {
+              console.log("[openai-multi-auth] codex-status update failed", error);
+            }
+          }
+
           logRequest(LOG_STAGES.RESPONSE, {
             status: response.status,
             ok: response.ok,
@@ -468,6 +481,66 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           type: "api" as const,
         },
       ],
+    },
+    config: async (cfg) => {
+      cfg.command = cfg.command || {};
+      cfg.command["codex-status"] = {
+        template:
+          "Run the codex-status tool and output the result EXACTLY as returned by the tool, without any additional text or commentary.",
+        description: "List all configured OpenAI accounts and their current usage status.",
+      };
+
+      cfg.experimental = cfg.experimental || {};
+      cfg.experimental.primary_tools = cfg.experimental.primary_tools || [];
+      if (!cfg.experimental.primary_tools.includes("codex-status")) {
+        cfg.experimental.primary_tools.push("codex-status");
+      }
+    },
+    tool: {
+      "codex-status": tool({
+        description: "List all configured OpenAI accounts and their current usage status.",
+        args: {},
+        async execute() {
+          const accounts = accountManager.getAllAccounts();
+          if (accounts.length === 0) {
+            return [
+              "OpenAI Codex Status",
+              "",
+              "  Accounts: 0",
+              "",
+              "Add accounts:",
+              "  opencode auth login",
+            ].join("\n");
+          }
+
+          const now = Date.now();
+          await Promise.all(
+            accounts.map(async (acc) => {
+              if (acc.access && acc.expires && acc.expires > now) {
+                await codexStatus.fetchFromBackend(acc, acc.access);
+              }
+            }),
+          );
+
+          const active = accountManager.getActiveAccount();
+          const activeIndex = active?.index ?? 0;
+          const lines: string[] = ["OpenAI Codex Status", ""];
+
+          for (const account of accounts) {
+            const status = account.index === activeIndex ? "ACTIVE" : "READY";
+            const email = account.email || `Account ${account.index + 1}`;
+            const plan = account.planType || "Unknown";
+            lines.push(`${account.index + 1}. ${status} ${email} [${plan}]`);
+            const statusLines = await codexStatus.renderStatus(account);
+            for (const line of statusLines) {
+              lines.push(line);
+            }
+            lines.push("");
+          }
+
+          return lines.join("\n");
+        },
+      }),
     },
   };
 };

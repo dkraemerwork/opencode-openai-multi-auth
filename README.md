@@ -139,6 +139,12 @@ rm ~/.config/opencode/openai-accounts.json
 cat ~/.config/opencode/openai-accounts.json | jq '.accounts[] | {email, rateLimitResets}'
 ```
 
+### Slash Commands (TUI)
+```text
+/codex-status
+```
+Shows usage status for all configured accounts.
+
 ---
 
 ## Models
@@ -151,6 +157,8 @@ All GPT-5.2 and GPT-5.1 models with reasoning variants:
 - **gpt-5.1-codex** (low/medium/high)
 - **gpt-5.1-codex-mini** (medium/high)
 - **gpt-5.1** (none/low/medium/high)
+
+Note: The model selector reflects what the ChatGPT OAuth backend advertises. API-only models (like gpt-5-mini/nano) may not appear until the backend exposes them.
 
 ---
 

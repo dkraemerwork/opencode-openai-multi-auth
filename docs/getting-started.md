@@ -343,7 +343,7 @@ opencode run "write hello world to test.txt" --model=openai/gpt-5.1-codex-medium
 opencode
 ```
 
-You'll see all 22 GPT 5.x variants (GPT 5.2, GPT 5.2 Codex, Codex Max, Codex, Codex Mini, and GPT 5.1 presets) in the model selector!
+You'll see the GPT 5.x variants that the ChatGPT OAuth backend advertises in the model selector (typically GPT 5.2/5.1 families). API-only models like gpt-5-mini/nano may not appear until the backend exposes them.
 
 ---
 

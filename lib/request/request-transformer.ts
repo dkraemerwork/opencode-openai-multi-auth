@@ -46,6 +46,11 @@ export function normalizeModel(model: string | undefined): string {
 	// like "GPT 5 Codex Low (ChatGPT Subscription)"
 	const normalized = modelId.toLowerCase();
 
+	// Pass through any explicit gpt-* model IDs
+	if (normalized.startsWith("gpt-")) {
+		return normalized;
+	}
+
 	// Priority order for pattern matching (most specific first):
 	// 1. GPT-5.2 Codex (newest codex model)
 	if (
@@ -100,15 +105,19 @@ export function normalizeModel(model: string | undefined): string {
 
 	// 8. GPT-5 Codex family (any variant with "codex")
 	if (normalized.includes("codex")) {
-		return "gpt-5.1-codex";
+		return "gpt-5-codex";
 	}
 
-	// 9. GPT-5 family (any variant) - default to 5.1 as 5 is being phased out
-	if (normalized.includes("gpt-5") || normalized.includes("gpt 5")) {
-		return "gpt-5.1";
+	// 9. GPT-5 family (any variant)
+	if (
+		normalized.includes("gpt-5") ||
+		normalized.includes("gpt 5") ||
+		normalized.includes("gpt.5")
+	) {
+		return "gpt-5";
 	}
 
-	// Default fallback - use gpt-5.1 as gpt-5 is being phased out
+	// Default fallback - use gpt-5.1 for unknown non-gpt models
 	return "gpt-5.1";
 }
 

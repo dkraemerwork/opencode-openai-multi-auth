@@ -27,6 +27,8 @@ const OPENCODE_AUTH_FILE = join(
 export class AccountManager {
   private accounts: ManagedAccount[] = [];
   private activeIndex = 0;
+  private roundRobinCursor = 0;
+  private strategyInitialized = false;
   private config: MultiAccountConfig;
 
   constructor(config: Partial<MultiAccountConfig> = {}) {
@@ -43,9 +45,13 @@ export class AccountManager {
       if (data.version === 1 && Array.isArray(data.accounts)) {
         this.accounts = data.accounts;
         this.activeIndex = data.activeAccountIndex || 0;
+        this.strategyInitialized = false;
       }
     } catch {
       this.accounts = [];
+      this.activeIndex = 0;
+      this.roundRobinCursor = 0;
+      this.strategyInitialized = false;
     }
   }
 
@@ -142,6 +148,7 @@ export class AccountManager {
           `[openai-multi-auth] Updated account ${extractedEmail || existing.index}`,
         );
       }
+      this.strategyInitialized = false;
       return existing;
     }
 
@@ -160,6 +167,7 @@ export class AccountManager {
     };
 
     this.accounts.push(account);
+    this.strategyInitialized = false;
     await this.saveToDisk();
 
     if (!this.config.quietMode) {
@@ -184,8 +192,13 @@ export class AccountManager {
   ): Promise<ManagedAccount | null> {
     if (this.accounts.length === 0) return null;
 
+    await this.initializeStrategyState();
+
     const now = Date.now();
-    const startIndex = this.activeIndex;
+    const startIndex =
+      this.config.accountSelectionStrategy === "round-robin"
+        ? this.roundRobinCursor
+        : this.activeIndex;
     let attempts = 0;
 
     while (attempts < this.accounts.length) {
@@ -194,6 +207,9 @@ export class AccountManager {
 
       if (this.isAccountAvailable(account, model, now)) {
         this.activeIndex = index;
+        if (this.config.accountSelectionStrategy === "round-robin") {
+          this.roundRobinCursor = (index + 1) % this.accounts.length;
+        }
         account.lastUsed = now;
         return account;
       }
@@ -201,7 +217,50 @@ export class AccountManager {
       attempts++;
     }
 
-    return this.getLeastRateLimitedAccount(model);
+    const fallback = this.getLeastRateLimitedAccount(model);
+    if (fallback) {
+      this.activeIndex = fallback.index;
+      if (this.config.accountSelectionStrategy === "round-robin") {
+        this.roundRobinCursor = (fallback.index + 1) % this.accounts.length;
+      }
+      fallback.lastUsed = now;
+    }
+    return fallback;
+  }
+
+  private normalizeIndex(index: number): number {
+    if (this.accounts.length === 0) return 0;
+    if (index < 0 || index >= this.accounts.length) return 0;
+    return index;
+  }
+
+  private async initializeStrategyState(): Promise<void> {
+    if (this.strategyInitialized) return;
+
+    if (this.accounts.length === 0) {
+      this.activeIndex = 0;
+      this.roundRobinCursor = 0;
+      this.strategyInitialized = true;
+      return;
+    }
+
+    this.activeIndex = this.normalizeIndex(this.activeIndex);
+
+    if (
+      this.config.accountSelectionStrategy === "hybrid" &&
+      this.accounts.length > 1
+    ) {
+      this.activeIndex = (this.activeIndex + 1) % this.accounts.length;
+      await this.saveToDisk();
+    }
+
+    if (this.config.pidOffsetEnabled && this.accounts.length > 1) {
+      const pidOffset = Math.abs(process.pid) % this.accounts.length;
+      this.activeIndex = (this.activeIndex + pidOffset) % this.accounts.length;
+    }
+
+    this.roundRobinCursor = this.activeIndex;
+    this.strategyInitialized = true;
   }
 
   private isAccountAvailable(
@@ -290,6 +349,8 @@ export class AccountManager {
       if (this.activeIndex >= this.accounts.length) {
         this.activeIndex = Math.max(0, this.accounts.length - 1);
       }
+      this.roundRobinCursor = this.activeIndex;
+      this.strategyInitialized = false;
 
       this.saveToDisk();
 
