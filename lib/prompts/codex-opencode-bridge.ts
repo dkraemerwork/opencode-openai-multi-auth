@@ -106,14 +106,31 @@ If ANY answer is NO → STOP and correct before proceeding.
 ## Advanced Tools
 
 **Task Tool (Sub-Agents):**
-- Use the Task tool (functions.task) to launch sub-agents
-- Check the Task tool description for current agent types and their capabilities
-- Useful for complex analysis, specialized workflows, or tasks requiring isolated context
+- Use the \`task\` tool to launch sub-agents for complex analysis or specialized workflows
+- Check the task tool description for current agent types and their capabilities
 - The agent list is dynamically generated - refer to tool schema for available agents
 
 **Parallelization:**
-- When multiple independent tool calls are needed, use multi_tool_use.parallel to run them concurrently.
-- Reserve sequential calls for ordered or data-dependent steps.
+- To run independent tool calls concurrently, emit multiple function_call blocks in the same assistant turn
+- OpenCode automatically parallelizes them - there is NO wrapper tool for this
+- Reserve sequential (single) calls for ordered or data-dependent steps
+
+## Tool Call Protocol (CRITICAL)
+
+You MUST invoke tools using the platform's native function-calling mechanism only.
+
+**FORBIDDEN PATTERNS - Never output these as text:**
+- \`assistant to=...\` or \`to=functions.*\`
+- \`multi_tool_use.parallel\` (does not exist)
+- \`functions.<toolname>\` syntax (use bare tool names)
+- JSON with \`tool_uses\`, \`recipient_name\`, or \`parameters\` keys
+- Any XML-like tool wrappers
+
+**CORRECT BEHAVIOR:**
+- Call tools directly via the function_call mechanism
+- For parallel calls: emit multiple function_call blocks in one turn
+- If a tool doesn't exist, use the closest available alternative
+- Only tools in your current runtime tools list are callable
 
 **MCP Tools:**
 - Model Context Protocol servers provide additional capabilities
@@ -132,30 +149,30 @@ Sandbox policies, approval mechanisms, final answer formatting, git commit proto
 - When uncertain, prefer non-destructive verification first (e.g., confirm file existence with \`list\`, then delete with \`bash\`).`;
 
 export interface CodexOpenCodeBridgeMeta {
-	estimatedTokens: number;
-	reductionVsCurrent: string;
-	reductionVsToolRemap: string;
-	protects: string[];
-	omits: string[];
+  estimatedTokens: number;
+  reductionVsCurrent: string;
+  reductionVsToolRemap: string;
+  protects: string[];
+  omits: string[];
 }
 
 export const CODEX_OPENCODE_BRIDGE_META: CodexOpenCodeBridgeMeta = {
-	estimatedTokens: 550,
-	reductionVsCurrent: "88%",
-	reductionVsToolRemap: "10%",
-	protects: [
-		"Tool name confusion (apply_patch/update_plan)",
-		"Missing tool awareness",
-		"Task tool / sub-agent awareness",
-		"MCP tool awareness",
-		"Premature yielding to user",
-		"Over-modification of existing code",
-		"Environment confusion",
-	],
-	omits: [
-		"Sandbox details (in Codex)",
-		"Formatting rules (in Codex)",
-		"Tool schemas (in tool JSONs)",
-		"Git protocols (in Codex)",
-	],
+  estimatedTokens: 550,
+  reductionVsCurrent: "88%",
+  reductionVsToolRemap: "10%",
+  protects: [
+    "Tool name confusion (apply_patch/update_plan)",
+    "Missing tool awareness",
+    "Task tool / sub-agent awareness",
+    "MCP tool awareness",
+    "Premature yielding to user",
+    "Over-modification of existing code",
+    "Environment confusion",
+  ],
+  omits: [
+    "Sandbox details (in Codex)",
+    "Formatting rules (in Codex)",
+    "Tool schemas (in tool JSONs)",
+    "Git protocols (in Codex)",
+  ],
 };
