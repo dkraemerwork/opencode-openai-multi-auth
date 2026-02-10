@@ -39,7 +39,7 @@ export const OPENAI_HEADERS = {
 /** OpenAI-specific header values */
 export const OPENAI_HEADER_VALUES = {
 	BETA_RESPONSES: "responses=experimental",
-	ORIGINATOR_CODEX: "codex_cli_rs",
+	ORIGINATOR_CODEX: "opencode",
 } as const;
 
 /** Codex CLI originator value */

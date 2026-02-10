@@ -87,6 +87,17 @@ data: {"type":"response.done","response":{"id":"resp_789"}}
 			expect(body).toEqual({ id: 'resp_789' });
 		});
 
+		it('should parse SSE stream when data prefix omits trailing space', async () => {
+			const sseContent = `data:{"type":"response.done","response":{"id":"resp_nospace","output":"ok"}}\n`;
+			const response = new Response(sseContent);
+			const headers = new Headers();
+
+			const result = await convertSseToJson(response, headers);
+			const body = await result.json();
+
+			expect(body).toEqual({ id: 'resp_nospace', output: 'ok' });
+		});
+
 		it('should handle empty SSE stream', async () => {
 			const response = new Response('');
 			const headers = new Headers();

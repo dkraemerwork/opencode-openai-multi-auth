@@ -3,6 +3,8 @@ import {
 	createState,
 	parseAuthorizationInput,
 	decodeJWT,
+	extractAccountIdFromClaims,
+	extractAccountIdFromToken,
 	createAuthorizationFlow,
 	CLIENT_ID,
 	AUTHORIZE_URL,
@@ -101,6 +103,54 @@ describe('Auth Module', () => {
 		});
 	});
 
+	describe('account id extraction', () => {
+		it('should extract account id from root claim', () => {
+			const claims = {
+				chatgpt_account_id: 'account-root',
+			};
+
+			expect(extractAccountIdFromClaims(claims as any)).toBe('account-root');
+		});
+
+		it('should extract account id from nested OpenAI auth claim', () => {
+			const claims = {
+				'https://api.openai.com/auth': {
+					chatgpt_account_id: 'account-nested',
+				},
+			};
+
+			expect(extractAccountIdFromClaims(claims as any)).toBe('account-nested');
+		});
+
+		it('should extract account id from organizations fallback', () => {
+			const claims = {
+				organizations: [{ id: 'org-123' }],
+			};
+
+			expect(extractAccountIdFromClaims(claims as any)).toBe('org-123');
+		});
+
+		it('should extract account id from token payload', () => {
+			const payload = Buffer.from(
+				JSON.stringify({
+					organizations: [{ id: 'org-from-token' }],
+				}),
+			).toString('base64url');
+			const token = `header.${payload}.signature`;
+
+			expect(extractAccountIdFromToken(token)).toBe('org-from-token');
+		});
+
+		it('should return undefined when token has no account id', () => {
+			const payload = Buffer.from(JSON.stringify({ email: 'test@example.com' })).toString(
+				'base64url',
+			);
+			const token = `header.${payload}.signature`;
+
+			expect(extractAccountIdFromToken(token)).toBeUndefined();
+		});
+	});
+
 	describe('createAuthorizationFlow', () => {
 		it('should create authorization flow with PKCE', async () => {
 			const flow = await createAuthorizationFlow();
@@ -128,7 +178,7 @@ describe('Auth Module', () => {
 			expect(url.searchParams.get('state')).toBe(flow.state);
 			expect(url.searchParams.get('id_token_add_organizations')).toBe('true');
 			expect(url.searchParams.get('codex_cli_simplified_flow')).toBe('true');
-			expect(url.searchParams.get('originator')).toBe('codex_cli_rs');
+			expect(url.searchParams.get('originator')).toBe('opencode');
 		});
 
 		it('should generate unique flows', async () => {

@@ -3,6 +3,7 @@ import type { Auth } from "@opencode-ai/sdk";
 import {
   createAuthorizationFlow,
   decodeJWT,
+  extractAccountIdFromToken,
   exchangeAuthorizationCode,
   parseAuthorizationInput,
   REDIRECT_URI,
@@ -15,7 +16,6 @@ import {
   CODEX_BASE_URL,
   DUMMY_API_KEY,
   ERROR_MESSAGES,
-  JWT_CLAIM_PATH,
   LOG_STAGES,
   PROVIDER_ID,
   HTTP_STATUS,
@@ -35,12 +35,27 @@ import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
 import { codexStatus } from "./lib/codex-status.js";
 import { prefetchModels } from "./lib/models.js";
+import { SessionBindingStore } from "./lib/session-bindings.js";
 
 function extractModelFromBody(body: string | undefined): string | undefined {
   if (!body) return undefined;
   try {
     const parsed = JSON.parse(body);
     return parsed?.model;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractPromptCacheKeyFromBody(body: string | undefined): string | undefined {
+  if (!body) return undefined;
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.prompt_cache_key !== "string") {
+      return undefined;
+    }
+    const key = parsed.prompt_cache_key.trim();
+    return key.length > 0 ? key : undefined;
   } catch {
     return undefined;
   }
@@ -73,24 +88,6 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
         body: {
           message: `${accountLabel} rate limited. Retry in ${retryText}.`,
           variant: "warning",
-        },
-      });
-    } catch {}
-  };
-
-  const showAccountSwitchToast = async (
-    fromAccount: ManagedAccount,
-    toAccount: ManagedAccount,
-  ) => {
-    if (quietMode) return;
-    const fromLabel = fromAccount.email || `Account ${fromAccount.index + 1}`;
-    const toLabel = toAccount.email || `Account ${toAccount.index + 1}`;
-    const toPlanLabel = toAccount.planType ? ` [${toAccount.planType}]` : "";
-    try {
-      await client.tui.showToast({
-        body: {
-          message: `Switching ${fromLabel} → ${toLabel}${toPlanLabel}`,
-          variant: "info",
         },
       });
     } catch {}
@@ -179,6 +176,37 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
   await accountManager.loadFromDisk();
   await accountManager.importFromOpenCodeAuth();
+
+  const sessionBindingStore = new SessionBindingStore();
+  sessionBindingStore.loadFromDisk();
+
+  const findAccountByIndex = (index: number): ManagedAccount | null => {
+    return accountManager.getAllAccounts().find((acc) => acc.index === index) || null;
+  };
+
+  const getSessionBoundAccount = async (
+    sessionKey: string | undefined,
+    model?: string,
+  ): Promise<ManagedAccount | null> => {
+    if (!sessionKey) {
+      return accountManager.getNextAvailableAccount(model);
+    }
+
+    const boundIndex = sessionBindingStore.get(sessionKey);
+    if (boundIndex !== undefined) {
+      const bound = findAccountByIndex(boundIndex);
+      if (bound) {
+        return bound;
+      }
+      sessionBindingStore.delete(sessionKey);
+    }
+
+    const account = await accountManager.getNextAvailableAccount(model);
+    if (account) {
+      sessionBindingStore.set(sessionKey, account.index);
+    }
+    return account;
+  };
 
   const buildManualOAuthFlow = (pkce: { verifier: string }, url: string) => ({
     url,
@@ -309,7 +337,10 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               return executeRequest(nextAccount, input, init, retryCount, triedAccountIndices);
             }
             return new Response(
-              JSON.stringify({ error: "All accounts failed token refresh" }),
+              JSON.stringify({
+                error:
+                  "Token refresh failed for the current session account. Start a new session to switch accounts.",
+              }),
               {
                 status: HTTP_STATUS.UNAUTHORIZED,
                 headers: { "Content-Type": "application/json" },
@@ -335,11 +366,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           const requestInit = transformation?.updatedInit ?? init;
 
           const accountId =
-            account.accountId ||
-            (() => {
-              const decoded = decodeJWT(account.access || "");
-              return decoded?.[JWT_CLAIM_PATH]?.chatgpt_account_id;
-            })();
+            account.accountId || extractAccountIdFromToken(account.access || "");
 
           if (!accountId) {
             logDebug(
@@ -435,7 +462,6 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                 );
               } catch {}
             }
-
             if (retryCount < accountManager.getAccountCount() - 1) {
               const nextAccount =
                 await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
@@ -446,7 +472,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             }
           }
 
-          if (response.status === HTTP_STATUS.UNAUTHORIZED && retryCount < 1) {
+          if (response.status === HTTP_STATUS.UNAUTHORIZED) {
             accountManager.markRefreshFailed(account, "401 Unauthorized");
             const nextAccount =
               await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
@@ -552,8 +578,11 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             input: Request | string | URL,
             init?: RequestInit,
           ): Promise<Response> {
-            const model = extractModelFromBody(init?.body as string);
-            const account = await accountManager.getNextAvailableAccount(model);
+            const requestBody =
+              typeof init?.body === "string" ? (init.body as string) : undefined;
+            const model = extractModelFromBody(requestBody);
+            const sessionKey = extractPromptCacheKeyFromBody(requestBody);
+            const account = await getSessionBoundAccount(sessionKey, model);
 
             if (!account) {
               return new Response(
@@ -619,6 +648,15 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           type: "api" as const,
         },
       ],
+    },
+    "chat.headers": async (
+      input: { model: { providerID: string }; sessionID: string },
+      output: { headers: Record<string, string> },
+    ) => {
+      if (input.model.providerID !== PROVIDER_ID) return;
+      output.headers = output.headers || {};
+      output.headers.originator = "opencode";
+      output.headers.session_id = input.sessionID;
     },
     config: async (cfg) => {
       cfg.command = cfg.command || {};

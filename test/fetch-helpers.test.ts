@@ -164,6 +164,33 @@ describe("Fetch Helpers Module", () => {
       expect(headers.get("accept")).toBe("text/event-stream");
     });
 
+    it("preserves upstream chat.headers session_id when promptCacheKey is missing", () => {
+      const init = {
+        headers: {
+          [OPENAI_HEADERS.SESSION_ID]: "ses_chat_headers",
+        },
+      } as any;
+      const headers = createCodexHeaders(init, accountId, accessToken, {
+        model: "gpt-5.2-codex",
+      });
+
+      expect(headers.get(OPENAI_HEADERS.SESSION_ID)).toBe("ses_chat_headers");
+      expect(headers.get(OPENAI_HEADERS.CONVERSATION_ID)).toBeNull();
+    });
+
+    it("preserves upstream originator from chat.headers when present", () => {
+      const init = {
+        headers: {
+          [OPENAI_HEADERS.ORIGINATOR]: "opencode",
+        },
+      } as any;
+      const headers = createCodexHeaders(init, accountId, accessToken, {
+        model: "gpt-5.2-codex",
+      });
+
+      expect(headers.get(OPENAI_HEADERS.ORIGINATOR)).toBe("opencode");
+    });
+
     it("maps usage-limit 404 errors to 429", async () => {
       const body = {
         error: {

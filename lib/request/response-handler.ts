@@ -10,9 +10,10 @@ function parseSseStream(sseText: string): unknown | null {
 	const lines = sseText.split('\n');
 
 	for (const line of lines) {
-		if (line.startsWith('data: ')) {
+		if (line.startsWith('data:')) {
 			try {
-				const data = JSON.parse(line.substring(6)) as SSEEventData;
+				const payload = line.slice(5).trimStart();
+				const data = JSON.parse(payload) as SSEEventData;
 
 				// Look for response.done event with final data
 				if (data.type === 'response.done' || data.type === 'response.completed') {
@@ -48,6 +49,9 @@ export async function convertSseToJson(response: Response, headers: Headers): Pr
 			if (done) break;
 			fullText += decoder.decode(value, { stream: true });
 		}
+
+		// Flush any buffered UTF-8 code units at stream end.
+		fullText += decoder.decode();
 
 		if (LOGGING_ENABLED) {
 			logRequest("stream-full", { fullContent: fullText });

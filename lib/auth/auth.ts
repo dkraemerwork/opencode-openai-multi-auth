@@ -107,11 +107,44 @@ export function decodeJWT(token: string): JWTPayload | null {
 		const parts = token.split(".");
 		if (parts.length !== 3) return null;
 		const payload = parts[1];
-		const decoded = Buffer.from(payload, "base64").toString("utf-8");
+		const decoded = Buffer.from(payload, "base64url").toString("utf-8");
 		return JSON.parse(decoded) as JWTPayload;
 	} catch {
-		return null;
+		try {
+			const parts = token.split(".");
+			if (parts.length !== 3) return null;
+			const payload = parts[1];
+			const decoded = Buffer.from(payload, "base64").toString("utf-8");
+			return JSON.parse(decoded) as JWTPayload;
+		} catch {
+			return null;
+		}
 	}
+}
+
+/**
+ * Extract ChatGPT account ID from decoded JWT claims.
+ * Mirrors upstream Codex plugin precedence for parity.
+ */
+export function extractAccountIdFromClaims(claims: JWTPayload | null): string | undefined {
+	if (!claims) return undefined;
+	if (claims.chatgpt_account_id) return claims.chatgpt_account_id;
+
+	const nested = claims["https://api.openai.com/auth"]?.chatgpt_account_id;
+	if (nested) return nested;
+
+	const orgId = claims.organizations?.[0]?.id;
+	if (orgId) return orgId;
+
+	return undefined;
+}
+
+/**
+ * Extract ChatGPT account ID directly from a JWT token.
+ */
+export function extractAccountIdFromToken(token: string): string | undefined {
+	const claims = decodeJWT(token);
+	return extractAccountIdFromClaims(claims);
 }
 
 /**
@@ -196,7 +229,7 @@ export async function createAuthorizationFlow(): Promise<AuthorizationFlow> {
 	url.searchParams.set("state", state);
 	url.searchParams.set("id_token_add_organizations", "true");
 	url.searchParams.set("codex_cli_simplified_flow", "true");
-	url.searchParams.set("originator", "codex_cli_rs");
+	url.searchParams.set("originator", "opencode");
 
 	return { pkce, state, url: url.toString() };
 }

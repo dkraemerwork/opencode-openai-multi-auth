@@ -1,7 +1,11 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { decodeJWT, refreshAccessToken } from "../auth/auth.js";
+import {
+  decodeJWT,
+  extractAccountIdFromClaims,
+  refreshAccessToken,
+} from "../auth/auth.js";
 import type {
   ManagedAccount,
   AccountsStorage,
@@ -9,7 +13,6 @@ import type {
 } from "./types.js";
 import { DEFAULT_MULTI_ACCOUNT_CONFIG } from "./types.js";
 
-const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const ACCOUNTS_FILE = join(
   homedir(),
   ".config",
@@ -107,10 +110,11 @@ export class AccountManager {
     if (accessToken) {
       const decoded = decodeJWT(accessToken);
       if (decoded) {
-        const authClaims = decoded[JWT_CLAIM_PATH] as
+        accountId = extractAccountIdFromClaims(decoded);
+
+        const authClaims = decoded["https://api.openai.com/auth"] as
           | Record<string, unknown>
           | undefined;
-        accountId = authClaims?.chatgpt_account_id as string | undefined;
         userId = authClaims?.chatgpt_user_id as string | undefined;
         planType = authClaims?.chatgpt_plan_type as string | undefined;
 
@@ -377,12 +381,10 @@ export class AccountManager {
 
     const decoded = decodeJWT(accessToken);
     if (decoded) {
-      const authClaims = decoded[JWT_CLAIM_PATH] as
+      const authClaims = decoded["https://api.openai.com/auth"] as
         | Record<string, unknown>
         | undefined;
-      if (authClaims?.chatgpt_account_id) {
-        account.accountId = authClaims.chatgpt_account_id as string;
-      }
+      account.accountId = extractAccountIdFromClaims(decoded);
       if (authClaims?.chatgpt_user_id) {
         account.userId = authClaims.chatgpt_user_id as string;
       }

@@ -211,7 +211,6 @@ export function createCodexHeaders(
     headers.set(OPENAI_HEADERS.SESSION_ID, cacheKey);
   } else {
     headers.delete(OPENAI_HEADERS.CONVERSATION_ID);
-    headers.delete(OPENAI_HEADERS.SESSION_ID);
   }
   headers.set("accept", "text/event-stream");
   return headers;
