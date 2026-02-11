@@ -20,6 +20,7 @@ export const PROVIDER_ID = "openai";
 
 /** HTTP Status Codes */
 export const HTTP_STATUS = {
+	BAD_REQUEST: 400,
 	OK: 200,
 	UNAUTHORIZED: 401,
 	NOT_FOUND: 404,
@@ -68,6 +69,7 @@ export const ERROR_MESSAGES = {
 	NO_ACCOUNT_ID: "Failed to extract accountId from token",
 	TOKEN_REFRESH_FAILED: "Failed to refresh token, authentication required",
 	REQUEST_PARSE_ERROR: "Error parsing request",
+	INVALID_BACKEND_URL: "Blocked request to untrusted backend URL",
 } as const;
 
 /** Log stages for request logging */

@@ -93,6 +93,32 @@ export function rewriteUrlForCodex(url: string): string {
 }
 
 /**
+ * Validate that outbound requests target only the trusted Codex backend endpoint.
+ * @param url - Rewritten URL
+ * @returns Same URL when trusted
+ * @throws Error when URL is not the exact trusted endpoint
+ */
+export function validateCodexBackendUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(ERROR_MESSAGES.INVALID_BACKEND_URL);
+  }
+
+  const isTrustedEndpoint =
+    parsed.protocol === "https:" &&
+    parsed.hostname === "chatgpt.com" &&
+    parsed.pathname === "/backend-api/codex/responses";
+
+  if (!isTrustedEndpoint) {
+    throw new Error(ERROR_MESSAGES.INVALID_BACKEND_URL);
+  }
+
+  return parsed.toString();
+}
+
+/**
  * Transforms request body and logs the transformation
  * Fetches model-specific Codex instructions based on the request model
  *
@@ -243,24 +269,16 @@ export async function handleErrorResponse(
 
 /**
  * Handles successful responses from the Codex API
- * Converts SSE to JSON for non-streaming requests (generateText)
- * Passes through SSE for streaming requests (streamText)
+ * Passes through Codex backend response for parity with upstream plugin.
  * @param response - Success response from API
- * @param isStreaming - Whether this is a streaming request (stream=true in body)
- * @returns Processed response (SSE→JSON for non-streaming, stream for streaming)
+ * @param _isStreaming - Preserved for compatibility with current call sites
+ * @returns Response passthrough with normalized content-type header
  */
 export async function handleSuccessResponse(
   response: Response,
-  isStreaming: boolean,
+  _isStreaming: boolean,
 ): Promise<Response> {
   const responseHeaders = ensureContentType(response.headers);
-
-  // For non-streaming requests (generateText), convert SSE to JSON
-  if (!isStreaming) {
-    return await convertSseToJson(response, responseHeaders);
-  }
-
-  // For streaming requests (streamText), return stream as-is
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

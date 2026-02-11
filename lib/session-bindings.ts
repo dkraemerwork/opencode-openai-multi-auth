@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { ensureSecureFile, writeJsonSecure } from "./secure-file.js";
 
 interface PersistedSessionBindings {
 	version: 1;
@@ -21,6 +22,7 @@ export class SessionBindingStore {
 
 	loadFromDisk(): void {
 		if (!existsSync(this.filePath)) return;
+		ensureSecureFile(this.filePath);
 
 		try {
 			const raw = readFileSync(this.filePath, "utf8");
@@ -54,12 +56,11 @@ export class SessionBindingStore {
 
 	private saveToDisk(): void {
 		try {
-			mkdirSync(dirname(this.filePath), { recursive: true });
 			const payload: PersistedSessionBindings = {
 				version: 1,
 				bindings: Object.fromEntries(this.bindings.entries()),
 			};
-			writeFileSync(this.filePath, JSON.stringify(payload, null, 2), "utf8");
+			writeJsonSecure(this.filePath, payload);
 		} catch {
 			// Persistence failure should not break request handling.
 		}

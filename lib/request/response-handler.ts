@@ -7,22 +7,43 @@ import type { SSEEventData } from "../types.js";
  * @returns Final response object or null if not found
  */
 function parseSseStream(sseText: string): unknown | null {
-	const lines = sseText.split('\n');
-
-	for (const line of lines) {
-		if (line.startsWith('data:')) {
-			try {
-				const payload = line.slice(5).trimStart();
-				const data = JSON.parse(payload) as SSEEventData;
-
-				// Look for response.done event with final data
-				if (data.type === 'response.done' || data.type === 'response.completed') {
-					return data.response;
-				}
-			} catch (e) {
-				// Skip malformed JSON
+	const parsePayload = (payload: string): unknown | null => {
+		if (!payload || payload === '[DONE]') return null;
+		try {
+			const data = JSON.parse(payload) as SSEEventData;
+			if (data.type === 'response.done' || data.type === 'response.completed') {
+				return data.response;
 			}
+		} catch {
+			return null;
 		}
+		return null;
+	};
+
+	const events = sseText.replace(/\r\n/g, '\n').split('\n\n');
+
+	for (const eventBlock of events) {
+		const dataLines: string[] = [];
+
+		for (const line of eventBlock.split('\n')) {
+			if (!line.startsWith('data:')) continue;
+			const payload = line.slice(5);
+			dataLines.push(payload.startsWith(' ') ? payload.slice(1) : payload);
+		}
+
+		if (dataLines.length === 0) continue;
+
+		const payload = dataLines.join('\n').trim();
+		const parsed = parsePayload(payload);
+		if (parsed) return parsed;
+	}
+
+	// Some providers emit one JSON payload per data line without SSE blank-line delimiters.
+	for (const line of sseText.replace(/\r\n/g, '\n').split('\n')) {
+		if (!line.startsWith('data:')) continue;
+		const payload = line.slice(5).trimStart();
+		const parsed = parsePayload(payload);
+		if (parsed) return parsed;
 	}
 
 	return null;

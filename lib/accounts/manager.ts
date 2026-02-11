@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import {
@@ -12,6 +12,7 @@ import type {
   MultiAccountConfig,
 } from "./types.js";
 import { DEFAULT_MULTI_ACCOUNT_CONFIG } from "./types.js";
+import { ensureSecureDir, ensureSecureFile, writeJsonSecure } from "../secure-file.js";
 
 const ACCOUNTS_FILE = join(
   homedir(),
@@ -40,6 +41,7 @@ export class AccountManager {
 
   async loadFromDisk(): Promise<void> {
     if (!existsSync(ACCOUNTS_FILE)) return;
+    ensureSecureFile(ACCOUNTS_FILE);
 
     try {
       const data = JSON.parse(
@@ -48,6 +50,7 @@ export class AccountManager {
       if (data.version === 1 && Array.isArray(data.accounts)) {
         this.accounts = data.accounts;
         this.activeIndex = data.activeAccountIndex || 0;
+        this.roundRobinCursor = data.roundRobinCursor ?? this.activeIndex;
         this.strategyInitialized = false;
       }
     } catch {
@@ -60,16 +63,15 @@ export class AccountManager {
 
   async saveToDisk(): Promise<void> {
     const dir = dirname(ACCOUNTS_FILE);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
+    ensureSecureDir(dir);
 
     const data: AccountsStorage = {
       version: 1,
       accounts: this.accounts,
       activeAccountIndex: this.activeIndex,
+      roundRobinCursor: this.roundRobinCursor,
     };
-    writeFileSync(ACCOUNTS_FILE, JSON.stringify(data, null, 2), "utf-8");
+    writeJsonSecure(ACCOUNTS_FILE, data);
   }
 
   async importFromOpenCodeAuth(): Promise<void> {
@@ -194,15 +196,42 @@ export class AccountManager {
   async getNextAvailableAccount(
     model?: string,
   ): Promise<ManagedAccount | null> {
+    const useRoundRobinCursor =
+      this.config.accountSelectionStrategy === "round-robin";
+    return this.selectNextAvailableAccount(model, useRoundRobinCursor);
+  }
+
+  async getNextAvailableAccountForNewSession(
+    model?: string,
+  ): Promise<ManagedAccount | null> {
+    const useRoundRobinCursor =
+      this.config.accountSelectionStrategy === "round-robin" ||
+      this.config.accountSelectionStrategy === "hybrid";
+
+    const account = await this.selectNextAvailableAccount(
+      model,
+      useRoundRobinCursor,
+    );
+
+    if (account && this.config.accountSelectionStrategy === "hybrid") {
+      await this.saveToDisk();
+    }
+
+    return account;
+  }
+
+  private async selectNextAvailableAccount(
+    model: string | undefined,
+    useRoundRobinCursor: boolean,
+  ): Promise<ManagedAccount | null> {
     if (this.accounts.length === 0) return null;
 
     await this.initializeStrategyState();
 
     const now = Date.now();
-    const startIndex =
-      this.config.accountSelectionStrategy === "round-robin"
-        ? this.roundRobinCursor
-        : this.activeIndex;
+    const startIndex = useRoundRobinCursor
+      ? this.roundRobinCursor
+      : this.activeIndex;
     let attempts = 0;
 
     while (attempts < this.accounts.length) {
@@ -211,7 +240,7 @@ export class AccountManager {
 
       if (this.isAccountAvailable(account, model, now)) {
         this.activeIndex = index;
-        if (this.config.accountSelectionStrategy === "round-robin") {
+        if (useRoundRobinCursor) {
           this.roundRobinCursor = (index + 1) % this.accounts.length;
         }
         account.lastUsed = now;
@@ -224,7 +253,7 @@ export class AccountManager {
     const fallback = this.getLeastRateLimitedAccount(model);
     if (fallback) {
       this.activeIndex = fallback.index;
-      if (this.config.accountSelectionStrategy === "round-robin") {
+      if (useRoundRobinCursor) {
         this.roundRobinCursor = (fallback.index + 1) % this.accounts.length;
       }
       fallback.lastUsed = now;
@@ -250,20 +279,14 @@ export class AccountManager {
 
     this.activeIndex = this.normalizeIndex(this.activeIndex);
 
-    if (
-      this.config.accountSelectionStrategy === "hybrid" &&
-      this.accounts.length > 1
-    ) {
-      this.activeIndex = (this.activeIndex + 1) % this.accounts.length;
-      await this.saveToDisk();
-    }
+    this.roundRobinCursor = this.normalizeIndex(this.roundRobinCursor);
 
     if (this.config.pidOffsetEnabled && this.accounts.length > 1) {
       const pidOffset = Math.abs(process.pid) % this.accounts.length;
       this.activeIndex = (this.activeIndex + pidOffset) % this.accounts.length;
+      this.roundRobinCursor = this.activeIndex;
     }
 
-    this.roundRobinCursor = this.activeIndex;
     this.strategyInitialized = true;
   }
 

@@ -5,8 +5,10 @@ import {
   refreshAndUpdateToken,
   extractRequestUrl,
   rewriteUrlForCodex,
+  validateCodexBackendUrl,
   createCodexHeaders,
   handleErrorResponse,
+  handleSuccessResponse,
 } from "../lib/request/fetch-helpers.js";
 import type { Auth } from "../lib/types.js";
 import {
@@ -88,7 +90,10 @@ describe("Fetch Helpers Module", () => {
         expires: 123,
       } as any);
 
-      const updated = await refreshAndUpdateToken(auth, client);
+      const updated = (await refreshAndUpdateToken(auth, client)) as Extract<
+        Auth,
+        { type: "oauth" }
+      >;
 
       expect(client.auth.set).toHaveBeenCalledWith({
         path: { id: "openai" },
@@ -139,6 +144,34 @@ describe("Fetch Helpers Module", () => {
       const url = "https://example.com/responses/responses";
       const result = rewriteUrlForCodex(url);
       expect(result).toBe("https://example.com/codex/responses/responses");
+    });
+  });
+
+  describe("validateCodexBackendUrl", () => {
+    it("allows trusted codex backend endpoint", () => {
+      const url = "https://chatgpt.com/backend-api/codex/responses";
+      expect(validateCodexBackendUrl(url)).toBe(url);
+    });
+
+    it("blocks non-https URLs", () => {
+      const url = "http://chatgpt.com/backend-api/codex/responses";
+      expect(() => validateCodexBackendUrl(url)).toThrow(
+        "Blocked request to untrusted backend URL",
+      );
+    });
+
+    it("blocks untrusted hosts", () => {
+      const url = "https://attacker.example/backend-api/codex/responses";
+      expect(() => validateCodexBackendUrl(url)).toThrow(
+        "Blocked request to untrusted backend URL",
+      );
+    });
+
+    it("blocks unexpected paths", () => {
+      const url = "https://chatgpt.com/backend-api/responses";
+      expect(() => validateCodexBackendUrl(url)).toThrow(
+        "Blocked request to untrusted backend URL",
+      );
     });
   });
 
@@ -249,6 +282,35 @@ describe("Fetch Helpers Module", () => {
       });
       expect(headers.get(OPENAI_HEADERS.CONVERSATION_ID)).toBeNull();
       expect(headers.get(OPENAI_HEADERS.SESSION_ID)).toBeNull();
+    });
+  });
+
+  describe("handleSuccessResponse", () => {
+    it("passes through non-streaming SSE response without conversion", async () => {
+      const sse = 'data: {"type":"response.done","response":{"id":"resp_1"}}\n\n';
+      const response = new Response(sse, {
+        status: 200,
+        headers: { "content-type": "text/event-stream; charset=utf-8" },
+      });
+
+      const result = await handleSuccessResponse(response, false);
+
+      expect(await result.text()).toBe(sse);
+      expect(result.headers.get("content-type")).toContain("text/event-stream");
+    });
+
+    it("passes through streaming responses unchanged", async () => {
+      const sse = 'data: {"type":"response.output_text.delta","delta":"hi"}\n\n';
+      const response = new Response(sse, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+
+      const result = await handleSuccessResponse(response, true);
+
+      expect(await result.text()).toBe(sse);
+      expect(result.status).toBe(200);
+      expect(result.headers.get("content-type")).toContain("text/event-stream");
     });
   });
 });

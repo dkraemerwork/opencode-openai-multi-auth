@@ -697,17 +697,30 @@ describe("Request Transformer Module", () => {
       expect(result.prompt_cache_key).toBeUndefined();
     });
 
-    it("should set required Codex fields", async () => {
+    it("does not force store/stream when host omits them", async () => {
       const body: RequestBody = {
         model: "gpt-5",
         input: [],
       };
       const result = await transformRequestBody(body);
 
-      expect(result.store).toBe(false);
-      expect(result.stream).toBe(true);
+      expect(result.store).toBeUndefined();
+      expect(result.stream).toBeUndefined();
       // instructions are no longer set by transformer - they come from OpenCode
       expect(result.instructions).toBeUndefined();
+    });
+
+    it("preserves host-provided store/stream values", async () => {
+      const body: RequestBody = {
+        model: "gpt-5",
+        input: [],
+        store: true,
+        stream: false,
+      };
+      const result = await transformRequestBody(body);
+
+      expect(result.store).toBe(true);
+      expect(result.stream).toBe(false);
     });
 
     it("should preserve model name for gpt-5 variants", async () => {
@@ -1414,7 +1427,7 @@ describe("Request Transformer Module", () => {
 
           expect(result.model).toBe("gpt-5-codex");
           expect(result.reasoning?.effort).toBe("high"); // From global
-          expect(result.store).toBe(false);
+          expect(result.store).toBeUndefined();
         });
 
         it("should handle gpt-5-mini without normalization", async () => {
@@ -1582,7 +1595,7 @@ describe("Request Transformer Module", () => {
           // All items kept, ALL IDs removed
           expect(result.input).toHaveLength(4);
           expect(result.input!.every((item) => !item.id)).toBe(true);
-          expect(result.store).toBe(false); // Stateless mode
+          expect(result.store).toBeUndefined();
           expect(result.include).toEqual(["reasoning.encrypted_content"]);
         });
       });
@@ -1629,9 +1642,9 @@ describe("Request Transformer Module", () => {
           expect(result.reasoning?.summary).toBe("auto");
           expect(result.text?.verbosity).toBe("low");
 
-          // Codex fields set
-          expect(result.store).toBe(false);
-          expect(result.stream).toBe(true);
+          // Host controls store/stream flags.
+          expect(result.store).toBeUndefined();
+          expect(result.stream).toBeUndefined();
           // instructions are no longer set by transformer
           expect(result.instructions).toBeUndefined();
           expect(result.include).toEqual(["reasoning.encrypted_content"]);

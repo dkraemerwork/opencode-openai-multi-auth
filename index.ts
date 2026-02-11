@@ -7,10 +7,10 @@ import {
   exchangeAuthorizationCode,
   parseAuthorizationInput,
   REDIRECT_URI,
+  validateAuthorizationState,
 } from "./lib/auth/auth.js";
 import { openBrowserUrl } from "./lib/auth/browser.js";
 import { startLocalOAuthServer } from "./lib/auth/server.js";
-import { getCodexMode, loadPluginConfig } from "./lib/config.js";
 import {
   AUTH_LABELS,
   CODEX_BASE_URL,
@@ -28,9 +28,8 @@ import {
   handleErrorResponse,
   handleSuccessResponse,
   rewriteUrlForCodex,
-  transformRequestForCodex,
+  validateCodexBackendUrl,
 } from "./lib/request/fetch-helpers.js";
-import type { UserConfig } from "./lib/types.js";
 import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
 import { codexStatus } from "./lib/codex-status.js";
@@ -88,6 +87,24 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
         body: {
           message: `${accountLabel} rate limited. Retry in ${retryText}.`,
           variant: "warning",
+        },
+      });
+    } catch {}
+  };
+
+  const showAccountSwitchToast = async (
+    fromAccount: ManagedAccount,
+    toAccount: ManagedAccount,
+  ) => {
+    if (quietMode) return;
+    const fromLabel = fromAccount.email || `Account ${fromAccount.index + 1}`;
+    const toLabel = toAccount.email || `Account ${toAccount.index + 1}`;
+    const toPlanLabel = toAccount.planType ? ` [${toAccount.planType}]` : "";
+    try {
+      await client.tui.showToast({
+        body: {
+          message: `Switching ${fromLabel} -> ${toLabel}${toPlanLabel}`,
+          variant: "info",
         },
       });
     } catch {}
@@ -201,20 +218,24 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
       sessionBindingStore.delete(sessionKey);
     }
 
-    const account = await accountManager.getNextAvailableAccount(model);
+    const account = await accountManager.getNextAvailableAccountForNewSession(model);
     if (account) {
       sessionBindingStore.set(sessionKey, account.index);
     }
     return account;
   };
 
-  const buildManualOAuthFlow = (pkce: { verifier: string }, url: string) => ({
+  const buildManualOAuthFlow = (
+    pkce: { verifier: string },
+    expectedState: string,
+    url: string,
+  ) => ({
     url,
     method: "code" as const,
     instructions: AUTH_LABELS.INSTRUCTIONS_MANUAL,
     callback: async (input: string) => {
       const parsed = parseAuthorizationInput(input);
-      if (!parsed.code) {
+      if (!parsed.code || !validateAuthorizationState(parsed.state, expectedState)) {
         return { type: "failed" as const };
       }
       const tokens = await exchangeAuthorizationCode(
@@ -309,17 +330,6 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           );
         }
 
-        const providerConfig = provider as
-          | { options?: Record<string, unknown>; models?: UserConfig["models"] }
-          | undefined;
-        const userConfig: UserConfig = {
-          global: providerConfig?.options || {},
-          models: providerConfig?.models || {},
-        };
-
-        const pluginConfig = loadPluginConfig();
-        const codexMode = getCodexMode(pluginConfig);
-
         const executeRequest = async (
           account: ManagedAccount,
           input: Request | string | URL,
@@ -349,21 +359,36 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           }
 
           const originalUrl = extractRequestUrl(input);
-          const url = rewriteUrlForCodex(originalUrl);
+          let url: string;
+          try {
+            url = validateCodexBackendUrl(rewriteUrlForCodex(originalUrl));
+          } catch {
+            return new Response(
+              JSON.stringify({ error: ERROR_MESSAGES.INVALID_BACKEND_URL }),
+              {
+                status: HTTP_STATUS.BAD_REQUEST,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
 
-          const originalBody = init?.body
-            ? JSON.parse(init.body as string)
-            : {};
+          let originalBody: Record<string, unknown> = {};
+          if (typeof init?.body === "string") {
+            try {
+              originalBody = JSON.parse(init.body);
+            } catch {
+              originalBody = {};
+            }
+          }
           const isStreaming = originalBody.stream === true;
-          const model = originalBody.model;
-
-          const transformation = await transformRequestForCodex(
-            init,
-            url,
-            userConfig,
-            codexMode,
-          );
-          const requestInit = transformation?.updatedInit ?? init;
+          const model =
+            typeof originalBody.model === "string"
+              ? originalBody.model
+              : undefined;
+          const promptCacheKey =
+            typeof originalBody.prompt_cache_key === "string"
+              ? originalBody.prompt_cache_key
+              : undefined;
 
           const accountId =
             account.accountId || extractAccountIdFromToken(account.access || "");
@@ -390,17 +415,17 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           }
 
           const headers = createCodexHeaders(
-            requestInit,
+            init,
             accountId,
             account.access || "",
             {
-              model: transformation?.body.model,
-              promptCacheKey: (transformation?.body as any)?.prompt_cache_key,
+              model,
+              promptCacheKey,
             },
           );
 
           const response = await fetch(url, {
-            ...requestInit,
+            ...init,
             headers,
           });
 
@@ -497,7 +522,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               fs.mkdirSync(logDir, { recursive: true });
               fs.writeFileSync(path.join(logDir, "last-400-error.json"), JSON.stringify({ 
                 timestamp: new Date().toISOString(),
-                model: transformation?.body.model,
+                model,
                 status: response.status, 
                 errorBody,
                 detail,
@@ -510,12 +535,15 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               
               // Log the error for debugging
               if (debugMode) {
-                console.log(`[openai-multi-auth] 400 error for model ${transformation?.body.model} on account ${account.email || account.index} [${account.planType}]: ${JSON.stringify(errorBody)}`);
+                console.log(`[openai-multi-auth] 400 error for model ${model} on account ${account.email || account.index} [${account.planType}]: ${JSON.stringify(errorBody)}`);
               }
               
               // Check if it's a "model not supported" error
               if (detail.includes("model is not supported") || detail.includes("not supported when using Codex")) {
-                const requestedModel = transformation?.body.model || model;
+                const requestedModel = typeof model === "string" ? model : "";
+                if (!requestedModel) {
+                  return await handleErrorResponse(response);
+                }
                 
                 // STEP 1: Try other accounts first (they might be Plus/Pro/Team and support the model)
                 const nextAccount = await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, requestedModel);
@@ -612,7 +640,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
             if (!serverInfo.ready) {
               serverInfo.close();
-              return buildManualOAuthFlow(pkce, url);
+              return buildManualOAuthFlow(pkce, state, url);
             }
 
             return buildAutoOAuthFlow(pkce, state, url, serverInfo);
@@ -629,7 +657,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
             if (!serverInfo.ready) {
               serverInfo.close();
-              return buildManualOAuthFlow(pkce, url);
+              return buildManualOAuthFlow(pkce, state, url);
             }
 
             return buildAutoOAuthFlow(pkce, state, url, serverInfo);
@@ -639,8 +667,8 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           label: AUTH_LABELS.OAUTH_MANUAL,
           type: "oauth" as const,
           authorize: async () => {
-            const { pkce, url } = await createAuthorizationFlow();
-            return buildManualOAuthFlow(pkce, url);
+            const { pkce, state, url } = await createAuthorizationFlow();
+            return buildManualOAuthFlow(pkce, state, url);
           },
         },
         {

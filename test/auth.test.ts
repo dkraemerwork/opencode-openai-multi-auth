@@ -5,6 +5,7 @@ import {
 	decodeJWT,
 	extractAccountIdFromClaims,
 	extractAccountIdFromToken,
+	validateAuthorizationState,
 	createAuthorizationFlow,
 	CLIENT_ID,
 	AUTHORIZE_URL,
@@ -188,6 +189,20 @@ describe('Auth Module', () => {
 			expect(flow1.state).not.toBe(flow2.state);
 			expect(flow1.pkce.verifier).not.toBe(flow2.pkce.verifier);
 			expect(flow1.url).not.toBe(flow2.url);
+		});
+	});
+
+	describe('validateAuthorizationState', () => {
+		it('accepts matching state values', () => {
+			expect(validateAuthorizationState('abc', 'abc')).toBe(true);
+		});
+
+		it('rejects missing parsed state', () => {
+			expect(validateAuthorizationState(undefined, 'abc')).toBe(false);
+		});
+
+		it('rejects mismatched state values', () => {
+			expect(validateAuthorizationState('wrong', 'abc')).toBe(false);
 		});
 	});
 });

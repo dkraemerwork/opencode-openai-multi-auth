@@ -483,11 +483,7 @@ export async function transformRequestBody(
   // Normalize model name for API call
   body.model = normalizedModel;
 
-  // Codex required fields
-  // ChatGPT backend REQUIRES store=false (confirmed via testing)
-  body.store = false;
-  // Always set stream=true for API - response handling detects original intent
-  body.stream = true;
+  // Preserve host-provided stream/store behavior for upstream parity.
   // Don't set instructions - let OpenCode's prompts handle the model behavior
   // Setting Codex CLI instructions causes the model to use internal +#+# format
   // instead of standard OpenAI function calling
@@ -558,9 +554,8 @@ export async function transformRequestBody(
     verbosity: resolveTextVerbosity(modelConfig, body),
   };
 
-  // Add include for encrypted reasoning content
-  // Default: ["reasoning.encrypted_content"] (required for stateless operation with store=false)
-  // This allows reasoning context to persist across turns without server-side storage
+  // Add include for encrypted reasoning content.
+  // Default: ["reasoning.encrypted_content"] to retain reasoning continuity where supported.
   body.include = resolveInclude(modelConfig, body);
 
   // Remove unsupported parameters

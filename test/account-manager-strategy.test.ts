@@ -1,37 +1,32 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AccountManager } from "../lib/accounts/manager.js";
+ 
+const originalHome = process.env.HOME;
 
-// NOTE: These tests require module reloading which Bun doesn't fully support
-// The AccountManager uses homedir() at module load time, so changing process.env.HOME
-// after the module is loaded doesn't affect where accounts are stored.
-// These tests work correctly when run with Node.js/Vitest.
-describe.skip("AccountManager strategy selection", () => {
-  let testHome: string;
-  const originalHome = process.env.HOME;
-
-  beforeEach(() => {
-    testHome = mkdtempSync(join(tmpdir(), "account-manager-test-"));
-    process.env.HOME = testHome;
+async function createManager(
+  home: string,
+  strategy: "sticky" | "round-robin" | "hybrid",
+) {
+  process.env.HOME = home;
+  vi.resetModules();
+  const { AccountManager } = await import("../lib/accounts/manager.js");
+  return new AccountManager({
+    accountSelectionStrategy: strategy,
+    quietMode: true,
+    debug: false,
   });
+}
 
+describe("AccountManager strategy selection", () => {
   afterEach(() => {
     process.env.HOME = originalHome;
-    try {
-      rmSync(testHome, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
   });
 
   it("keeps using the same account in sticky mode", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "sticky",
-      quietMode: true,
-      debug: false,
-    });
+    const home = mkdtempSync(join(tmpdir(), "strategy-sticky-"));
+    const manager = await createManager(home, "sticky");
     await manager.loadFromDisk();
 
     await manager.addAccount("a@example.com", "rt-1");
@@ -47,11 +42,8 @@ describe.skip("AccountManager strategy selection", () => {
   });
 
   it("rotates accounts on each request in round-robin mode", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "round-robin",
-      quietMode: true,
-      debug: false,
-    });
+    const home = mkdtempSync(join(tmpdir(), "strategy-rr-"));
+    const manager = await createManager(home, "round-robin");
     await manager.loadFromDisk();
 
     await manager.addAccount("a@example.com", "rt-1");
@@ -70,23 +62,19 @@ describe.skip("AccountManager strategy selection", () => {
   });
 
   it("rotates initial account across sessions in hybrid mode", async () => {
-    const manager1 = new AccountManager({
-      accountSelectionStrategy: "hybrid",
-      quietMode: true,
-      debug: false,
-    });
-    await manager1.loadFromDisk();
-    await manager1.addAccount("a@example.com", "rt-1");
-    await manager1.addAccount("b@example.com", "rt-2");
-    const session1Pick = await manager1.getNextAvailableAccount();
+    const home = mkdtempSync(join(tmpdir(), "strategy-hybrid-"));
 
-    const manager2 = new AccountManager({
-      accountSelectionStrategy: "hybrid",
-      quietMode: true,
-      debug: false,
-    });
-    await manager2.loadFromDisk();
-    const session2Pick = await manager2.getNextAvailableAccount();
+    const managerSession1 = await createManager(home, "hybrid");
+    await managerSession1.loadFromDisk();
+    await managerSession1.addAccount("a@example.com", "rt-1");
+    await managerSession1.addAccount("b@example.com", "rt-2");
+    const session1Pick =
+      await managerSession1.getNextAvailableAccountForNewSession();
+
+    const managerSession2 = await createManager(home, "hybrid");
+    await managerSession2.loadFromDisk();
+    const session2Pick =
+      await managerSession2.getNextAvailableAccountForNewSession();
 
     expect(session1Pick?.index).not.toBeUndefined();
     expect(session2Pick?.index).not.toBeUndefined();
@@ -94,11 +82,8 @@ describe.skip("AccountManager strategy selection", () => {
   });
 
   it("switches after rate limit and then stays sticky", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "sticky",
-      quietMode: true,
-      debug: false,
-    });
+    const home = mkdtempSync(join(tmpdir(), "strategy-sticky-failover-"));
+    const manager = await createManager(home, "sticky");
     await manager.loadFromDisk();
 
     await manager.addAccount("a@example.com", "rt-1");
@@ -117,11 +102,8 @@ describe.skip("AccountManager strategy selection", () => {
   });
 
   it("skips rate-limited accounts and keeps round-robin progression", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "round-robin",
-      quietMode: true,
-      debug: false,
-    });
+    const home = mkdtempSync(join(tmpdir(), "strategy-rr-failover-"));
+    const manager = await createManager(home, "round-robin");
     await manager.loadFromDisk();
 
     await manager.addAccount("a@example.com", "rt-1");
@@ -142,11 +124,8 @@ describe.skip("AccountManager strategy selection", () => {
   });
 
   it("stays sticky within a single hybrid session", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "hybrid",
-      quietMode: true,
-      debug: false,
-    });
+    const home = mkdtempSync(join(tmpdir(), "strategy-hybrid-sticky-"));
+    const manager = await createManager(home, "hybrid");
     await manager.loadFromDisk();
 
     await manager.addAccount("a@example.com", "rt-1");
@@ -161,53 +140,35 @@ describe.skip("AccountManager strategy selection", () => {
     expect(third?.index).toBe(first?.index);
   });
 
-  it("excludes specified accounts when using getNextAvailableAccountExcluding", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "sticky",
-      quietMode: true,
-      debug: false,
-    });
+  it("rotates account selection for new session bindings in the same hybrid process", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-hybrid-new-session-"));
+    const manager = await createManager(home, "hybrid");
     await manager.loadFromDisk();
 
     await manager.addAccount("a@example.com", "rt-1");
     await manager.addAccount("b@example.com", "rt-2");
     await manager.addAccount("c@example.com", "rt-3");
 
-    const excludeFirst = new Set([0]);
-    const pick1 = await manager.getNextAvailableAccountExcluding(excludeFirst);
-    expect(pick1?.index).toBe(1);
+    const firstSession = await manager.getNextAvailableAccountForNewSession();
+    const secondSession = await manager.getNextAvailableAccountForNewSession();
+    const thirdSession = await manager.getNextAvailableAccountForNewSession();
+    const fourthSession = await manager.getNextAvailableAccountForNewSession();
 
-    const excludeFirstTwo = new Set([0, 1]);
-    const pick2 =
-      await manager.getNextAvailableAccountExcluding(excludeFirstTwo);
-    expect(pick2?.index).toBe(2);
-
-    const excludeAll = new Set([0, 1, 2]);
-    const pick3 = await manager.getNextAvailableAccountExcluding(excludeAll);
-    expect(pick3).toBeNull();
+    expect(firstSession?.index).toBe(0);
+    expect(secondSession?.index).toBe(1);
+    expect(thirdSession?.index).toBe(2);
+    expect(fourthSession?.index).toBe(0);
   });
 
-  it("getNextAvailableAccountExcluding respects rate limits", async () => {
-    const manager = new AccountManager({
-      accountSelectionStrategy: "sticky",
-      quietMode: true,
-      debug: false,
-    });
+  it("persists accounts file with owner-only permissions", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-secure-file-"));
+    const manager = await createManager(home, "sticky");
     await manager.loadFromDisk();
 
-    await manager.addAccount("a@example.com", "rt-1");
-    await manager.addAccount("b@example.com", "rt-2");
-    await manager.addAccount("c@example.com", "rt-3");
+    await manager.addAccount("secure@example.com", "rt-secure");
 
-    const accounts = manager.getAllAccounts();
-    manager.markRateLimited(accounts[0], 60_000, "gpt-5.2-codex");
-
-    const excludeSecond = new Set([1]);
-    const pick = await manager.getNextAvailableAccountExcluding(
-      excludeSecond,
-      "gpt-5.2-codex",
-    );
-
-    expect(pick?.index).toBe(2);
+    const filePath = join(home, ".config", "opencode", "openai-accounts.json");
+    const mode = statSync(filePath).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 });

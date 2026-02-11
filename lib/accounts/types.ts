@@ -23,6 +23,7 @@ export interface AccountsStorage {
   version: 1;
   accounts: ManagedAccount[];
   activeAccountIndex: number;
+  roundRobinCursor?: number;
 }
 
 export interface MultiAccountConfig {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LOGGING_ENABLED, logRequest } from '../lib/logger.js';
+import { LOGGING_ENABLED, logRequest, sanitizeLogData } from '../lib/logger.js';
 
 describe('Logger Module', () => {
 	describe('LOGGING_ENABLED constant', () => {
@@ -38,6 +38,32 @@ describe('Logger Module', () => {
 					boolean: true,
 				});
 			}).not.toThrow();
+		});
+	});
+
+	describe('sanitizeLogData', () => {
+		it('redacts authorization header values', () => {
+			const input = { Authorization: 'Bearer very-secret-token' };
+			expect(sanitizeLogData(input)).toEqual({ Authorization: '[REDACTED]' });
+		});
+
+		it('redacts nested token-like fields', () => {
+			const input = {
+				nested: {
+					refresh_token: 'refresh-secret',
+				},
+			};
+			expect(sanitizeLogData(input)).toEqual({
+				nested: { refresh_token: '[REDACTED]' },
+			});
+		});
+
+		it('replaces raw prompt and response body fields', () => {
+			const input = { body: { input: 'secret prompt' }, fullContent: 'huge secret stream' };
+			expect(sanitizeLogData(input)).toEqual({
+				body: '[OMITTED]',
+				fullContent: '[OMITTED]',
+			});
 		});
 	});
 });

@@ -49,6 +49,16 @@ export function parseAuthorizationInput(input: string): ParsedAuthInput {
 }
 
 /**
+ * Validate OAuth state value returned from callback.
+ */
+export function validateAuthorizationState(
+	parsedState: string | undefined,
+	expectedState: string,
+): boolean {
+	return !!parsedState && parsedState === expectedState;
+}
+
+/**
  * Exchange authorization code for access and refresh tokens
  * @param code - Authorization code from OAuth flow
  * @param verifier - PKCE verifier

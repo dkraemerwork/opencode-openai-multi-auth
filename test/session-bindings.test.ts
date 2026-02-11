@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,5 +53,14 @@ describe("SessionBindingStore", () => {
 		writeFileSync(filePath, "not-json", "utf8");
 		expect(() => store.loadFromDisk()).not.toThrow();
 		expect(store.get("ses_abc")).toBeUndefined();
+	});
+
+	it("writes bindings file with owner-only permissions", () => {
+		const { filePath, store } = createStore();
+		store.loadFromDisk();
+		store.set("ses_secure", 1);
+
+		const mode = statSync(filePath).mode & 0o777;
+		expect(mode).toBe(0o600);
 	});
 });
