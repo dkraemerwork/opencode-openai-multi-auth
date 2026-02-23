@@ -9,6 +9,7 @@ export interface CodexRateLimitSnapshot {
   accountId: string;
   email: string;
   plan: string;
+  backendPlan?: string;
   updatedAt: number;
   primary: {
     usedPercent: number;
@@ -28,6 +29,7 @@ export interface CodexRateLimitSnapshot {
 }
 
 interface CodexWhamUsageResponse {
+  plan_type?: string;
   rate_limit?: {
     primary_window?: {
       used_percent: number;
@@ -143,6 +145,7 @@ export class CodexStatusManager {
       accountId: account.accountId || "",
       email: account.email || "",
       plan: account.planType || "",
+      backendPlan: existing?.backendPlan,
       updatedAt: Date.now(),
       primary:
         primaryUsed !== null || primaryWindow !== null || primaryReset !== null
@@ -268,9 +271,18 @@ export class CodexStatusManager {
     };
 
     if (!snapshot) {
+      if (account.planType) {
+        lines.push(`  Plan:              OAuth ${account.planType}`);
+      }
       lines.push(renderBar("5h limit", null));
       lines.push(renderBar("Weekly limit", null));
       return lines;
+    }
+
+    if (snapshot.plan || snapshot.backendPlan) {
+      const oauthPlan = snapshot.plan || "unknown";
+      const backendPlan = snapshot.backendPlan || "unknown";
+      lines.push(`  Plan:              OAuth ${oauthPlan} | Backend ${backendPlan}`);
     }
 
     const primaryLabel = formatWindow(snapshot.primary?.windowMinutes || 0);
@@ -309,6 +321,7 @@ export class CodexStatusManager {
       accountId: account.accountId || "",
       email: account.email || "",
       plan: account.planType || "",
+      backendPlan: snapshot.plan_type || existing?.backendPlan,
       updatedAt: Date.now(),
       primary: snapshot.primary
         ? {
@@ -347,6 +360,7 @@ export class CodexStatusManager {
       const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
+          "chatgpt-account-id": account.accountId || "",
           "OpenAI-Account-Id": account.accountId || "",
           Accept: "application/json",
           "User-Agent": "codex_cli_rs",
@@ -354,11 +368,14 @@ export class CodexStatusManager {
         },
       });
 
-      if (res.ok) {
-        const json = (await res.json()) as CodexWhamUsageResponse;
+        if (res.ok) {
+          const json = (await res.json()) as CodexWhamUsageResponse;
 
-        const data: any = {};
-        if (json.rate_limit) {
+          const data: any = {};
+          if (json.plan_type) {
+            data.plan_type = json.plan_type;
+          }
+          if (json.rate_limit) {
           if (json.rate_limit.primary_window) {
             data.primary = {
               used_percent: json.rate_limit.primary_window.used_percent,
