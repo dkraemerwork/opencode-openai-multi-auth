@@ -115,4 +115,111 @@ describe("CodexStatusManager", () => {
     const snapshots = await manager.getAllSnapshots();
     expect(snapshots.length).toBe(2);
   });
+
+  it("uses chatgpt-account-id header when fetching backend usage", async () => {
+    const manager = new CodexStatusManager();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            rate_limit: {
+              primary_window: {
+                used_percent: 12,
+                limit_window_seconds: 18000,
+                reset_at: 1771264056,
+              },
+              secondary_window: {
+                used_percent: 5,
+                limit_window_seconds: 604800,
+                reset_at: 1771500294,
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    try {
+      await manager.fetchFromBackend(baseAccount as any, "a.b.c");
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0];
+      const headers = new Headers((init as RequestInit).headers);
+      expect(headers.get("chatgpt-account-id")).toBe(baseAccount.accountId);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("renders 5h and weekly limits from team usage response", async () => {
+    const manager = new CodexStatusManager();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            plan_type: "team",
+            rate_limit: {
+              primary_window: {
+                used_percent: 14,
+                limit_window_seconds: 18000,
+                reset_at: 1771264056,
+              },
+              secondary_window: {
+                used_percent: 22,
+                limit_window_seconds: 604800,
+                reset_at: 1771500294,
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    try {
+      await manager.fetchFromBackend(baseAccount as any, "a.b.c");
+      const lines = await manager.renderStatus(baseAccount as any);
+      expect(lines.some((line) => line.includes("Plan:") && line.includes("Backend team"))).toBe(true);
+      expect(lines.some((line) => line.includes("5h limit:"))).toBe(true);
+      expect(lines.some((line) => line.includes("Weekly limit:"))).toBe(true);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("shows oauth and backend plan mismatch", async () => {
+    const manager = new CodexStatusManager();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            plan_type: "free",
+            rate_limit: {
+              primary_window: {
+                used_percent: 0,
+                limit_window_seconds: 604800,
+                reset_at: 1771856509,
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    try {
+      await manager.fetchFromBackend(baseAccount as any, "a.b.c");
+      const lines = await manager.renderStatus(baseAccount as any);
+      expect(
+        lines.some(
+          (line) =>
+            line.includes("Plan:") &&
+            line.includes("Backend free"),
+        ),
+      ).toBe(true);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
 });
