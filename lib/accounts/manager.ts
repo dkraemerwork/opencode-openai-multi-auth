@@ -311,6 +311,13 @@ export class AccountManager {
     return true;
   }
 
+  isAccountAvailableForModel(
+    account: ManagedAccount,
+    model?: string,
+  ): boolean {
+    return this.isAccountAvailable(account, model, Date.now());
+  }
+
   private getLeastRateLimitedAccount(model?: string): ManagedAccount | null {
     if (this.accounts.length === 0) return null;
 
@@ -355,6 +362,8 @@ export class AccountManager {
         `[openai-multi-auth] ${identifier} rate limited until ${new Date(resetTime).toISOString()}`,
       );
     }
+
+    void this.saveToDisk();
   }
 
   markRefreshFailed(account: ManagedAccount, error: string): void {
