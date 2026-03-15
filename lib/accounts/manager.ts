@@ -212,11 +212,6 @@ export class AccountManager {
       model,
       useRoundRobinCursor,
     );
-
-    if (account && this.config.accountSelectionStrategy === "hybrid") {
-      await this.saveToDisk();
-    }
-
     return account;
   }
 
@@ -239,11 +234,11 @@ export class AccountManager {
       const account = this.accounts[index];
 
       if (this.isAccountAvailable(account, model, now)) {
-        this.activeIndex = index;
-        if (useRoundRobinCursor) {
-          this.roundRobinCursor = (index + 1) % this.accounts.length;
-        }
-        account.lastUsed = now;
+        await this.updateSelectedAccount(
+          account,
+          now,
+          useRoundRobinCursor ? (index + 1) % this.accounts.length : undefined,
+        );
         return account;
       }
 
@@ -252,11 +247,13 @@ export class AccountManager {
 
     const fallback = this.getLeastRateLimitedAccount(model);
     if (fallback) {
-      this.activeIndex = fallback.index;
-      if (useRoundRobinCursor) {
-        this.roundRobinCursor = (fallback.index + 1) % this.accounts.length;
-      }
-      fallback.lastUsed = now;
+      await this.updateSelectedAccount(
+        fallback,
+        now,
+        useRoundRobinCursor
+          ? (fallback.index + 1) % this.accounts.length
+          : undefined,
+      );
     }
     return fallback;
   }
@@ -277,9 +274,18 @@ export class AccountManager {
       return;
     }
 
-    this.activeIndex = this.normalizeIndex(this.activeIndex);
+    const normalizedActiveIndex = this.normalizeIndex(this.activeIndex);
+    const normalizedRoundRobinCursor = this.normalizeIndex(this.roundRobinCursor);
+    const normalizedStateChanged =
+      normalizedActiveIndex !== this.activeIndex ||
+      normalizedRoundRobinCursor !== this.roundRobinCursor;
 
-    this.roundRobinCursor = this.normalizeIndex(this.roundRobinCursor);
+    this.activeIndex = normalizedActiveIndex;
+    this.roundRobinCursor = normalizedRoundRobinCursor;
+
+    if (normalizedStateChanged) {
+      await this.saveToDisk();
+    }
 
     if (this.config.pidOffsetEnabled && this.accounts.length > 1) {
       const pidOffset = Math.abs(process.pid) % this.accounts.length;
@@ -311,6 +317,26 @@ export class AccountManager {
     return true;
   }
 
+  private async updateSelectedAccount(
+    account: ManagedAccount,
+    now: number,
+    nextRoundRobinCursor?: number,
+  ): Promise<void> {
+    const activeIndexChanged = this.activeIndex !== account.index;
+    const roundRobinCursorChanged =
+      nextRoundRobinCursor !== undefined &&
+      this.roundRobinCursor !== nextRoundRobinCursor;
+
+    this.activeIndex = account.index;
+    if (nextRoundRobinCursor !== undefined) {
+      this.roundRobinCursor = nextRoundRobinCursor;
+    }
+    account.lastUsed = now;
+
+    if (activeIndexChanged || roundRobinCursorChanged) {
+      await this.saveToDisk();
+    }
+  }
   private getLeastRateLimitedAccount(model?: string): ManagedAccount | null {
     if (this.accounts.length === 0) return null;
 
@@ -490,8 +516,7 @@ export class AccountManager {
     for (const account of this.accounts) {
       if (excludeIndices.has(account.index)) continue;
       if (this.isAccountAvailable(account, model, now)) {
-        this.activeIndex = account.index;
-        account.lastUsed = now;
+        await this.updateSelectedAccount(account, now);
         return account;
       }
     }
@@ -517,8 +542,7 @@ export class AccountManager {
     }
 
     if (bestAccount) {
-      this.activeIndex = bestAccount.index;
-      bestAccount.lastUsed = now;
+      await this.updateSelectedAccount(bestAccount, now);
     }
 
     return bestAccount;
