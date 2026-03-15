@@ -201,6 +201,14 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
     return accountManager.getAllAccounts().find((acc) => acc.index === index) || null;
   };
 
+  const bindSessionAccount = (
+    sessionKey: string | undefined,
+    account: ManagedAccount,
+  ) => {
+    if (!sessionKey) return;
+    sessionBindingStore.set(sessionKey, account.index);
+  };
+
   const getSessionBoundAccount = async (
     sessionKey: string | undefined,
     model?: string,
@@ -213,6 +221,19 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
     if (boundIndex !== undefined) {
       const bound = findAccountByIndex(boundIndex);
       if (bound) {
+        if (accountManager.isAccountAvailableForModel(bound, model)) {
+          return bound;
+        }
+
+        const nextAccount = await accountManager.getNextAvailableAccountExcluding(
+          new Set([bound.index]),
+          model,
+        );
+        if (nextAccount) {
+          bindSessionAccount(sessionKey, nextAccount);
+          return nextAccount;
+        }
+
         return bound;
       }
       sessionBindingStore.delete(sessionKey);
@@ -220,7 +241,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
     const account = await accountManager.getNextAvailableAccountForNewSession(model);
     if (account) {
-      sessionBindingStore.set(sessionKey, account.index);
+      bindSessionAccount(sessionKey, account);
     }
     return account;
   };
@@ -337,12 +358,34 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
           retryCount = 0,
           triedAccountIndices: Set<number> = new Set(),
         ): Promise<Response> => {
+          let originalBody: Record<string, unknown> = {};
+          if (typeof init?.body === "string") {
+            try {
+              originalBody = JSON.parse(init.body);
+            } catch {
+              originalBody = {};
+            }
+          }
+          const isStreaming = originalBody.stream === true;
+          const model =
+            typeof originalBody.model === "string"
+              ? originalBody.model
+              : undefined;
+          const promptCacheKey =
+            typeof originalBody.prompt_cache_key === "string"
+              ? originalBody.prompt_cache_key
+              : undefined;
+
           // Track this account as tried
           triedAccountIndices.add(account.index);
           const isTokenValid = await accountManager.ensureValidToken(account);
           if (!isTokenValid) {
-            const nextAccount = await accountManager.getNextAvailableAccountExcluding(triedAccountIndices);
+            const nextAccount = await accountManager.getNextAvailableAccountExcluding(
+              triedAccountIndices,
+              model,
+            );
             if (nextAccount && nextAccount.index !== account.index) {
+              bindSessionAccount(promptCacheKey, nextAccount);
               await showAccountSwitchToast(account, nextAccount);
               return executeRequest(nextAccount, input, init, retryCount, triedAccountIndices);
             }
@@ -371,24 +414,6 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               },
             );
           }
-
-          let originalBody: Record<string, unknown> = {};
-          if (typeof init?.body === "string") {
-            try {
-              originalBody = JSON.parse(init.body);
-            } catch {
-              originalBody = {};
-            }
-          }
-          const isStreaming = originalBody.stream === true;
-          const model =
-            typeof originalBody.model === "string"
-              ? originalBody.model
-              : undefined;
-          const promptCacheKey =
-            typeof originalBody.prompt_cache_key === "string"
-              ? originalBody.prompt_cache_key
-              : undefined;
 
           const accountId =
             account.accountId || extractAccountIdFromToken(account.access || "");
@@ -491,6 +516,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               const nextAccount =
                 await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
               if (nextAccount && nextAccount.index !== account.index) {
+                bindSessionAccount(promptCacheKey, nextAccount);
                 await showAccountSwitchToast(account, nextAccount);
                 return executeRequest(nextAccount, input, init, retryCount + 1, triedAccountIndices);
               }
@@ -502,6 +528,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
             const nextAccount =
               await accountManager.getNextAvailableAccountExcluding(triedAccountIndices, model);
             if (nextAccount && nextAccount.index !== account.index) {
+              bindSessionAccount(promptCacheKey, nextAccount);
               await showAccountSwitchToast(account, nextAccount);
               return executeRequest(nextAccount, input, init, retryCount + 1, triedAccountIndices);
             }
@@ -551,6 +578,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                   if (debugMode) {
                     console.log(`[openai-multi-auth] Model ${requestedModel} not supported on ${account.email || account.index} [${account.planType}], trying ${nextAccount.email || nextAccount.index} [${nextAccount.planType}]`);
                   }
+                  bindSessionAccount(promptCacheKey, nextAccount);
                   await showModelRetryToast(
                     requestedModel,
                     account,
@@ -580,6 +608,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
                   // Get first available account for the fallback model
                   const fallbackAccount = await accountManager.getNextAvailableAccount(fallbackModel);
                   if (fallbackAccount) {
+                    bindSessionAccount(promptCacheKey, fallbackAccount);
                     // Reset tried accounts for the new model
                     return executeRequest(fallbackAccount, input, modifiedInit, 0, new Set());
                   }

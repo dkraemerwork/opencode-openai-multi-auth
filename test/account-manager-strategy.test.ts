@@ -101,6 +101,26 @@ describe("AccountManager strategy selection", () => {
     expect(third?.index).toBe(1);
   });
 
+  it("persists rate-limited accounts across manager reloads", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-sticky-persisted-limit-"));
+    const manager = await createManager(home, "sticky");
+    await manager.loadFromDisk();
+
+    await manager.addAccount("a@example.com", "rt-1");
+    await manager.addAccount("b@example.com", "rt-2");
+
+    const first = await manager.getNextAvailableAccount("gpt-5.2-codex");
+    expect(first?.index).toBe(0);
+
+    manager.markRateLimited(first!, 60_000, "gpt-5.2-codex");
+
+    const reloadedManager = await createManager(home, "sticky");
+    await reloadedManager.loadFromDisk();
+
+    const next = await reloadedManager.getNextAvailableAccount("gpt-5.2-codex");
+    expect(next?.index).toBe(1);
+  });
+
   it("skips rate-limited accounts and keeps round-robin progression", async () => {
     const home = mkdtempSync(join(tmpdir(), "strategy-rr-failover-"));
     const manager = await createManager(home, "round-robin");

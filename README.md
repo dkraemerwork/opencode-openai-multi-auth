@@ -75,8 +75,8 @@ When you hit a rate limit:
 
 1. Plugin detects 429 (rate limited) response
 2. Marks current account as limited for that model
-3. Keeps the current session on the same account (no mid-turn hot-swap)
-4. Keeps that session/account binding; start a new session to switch accounts
+3. Retries the request on the next available account
+4. Rebinds that session to the new account so later prompts keep using it
 5. Shows toast notification for account usage and rate limit status
 
 Session bindings are persisted locally so the same `prompt_cache_key` stays on the same account even after plugin process restarts.
