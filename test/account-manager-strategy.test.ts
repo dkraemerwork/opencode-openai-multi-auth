@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
  
@@ -17,6 +17,15 @@ async function createManager(
     quietMode: true,
     debug: false,
   });
+}
+
+function readAccountsStorage(home: string) {
+  return JSON.parse(
+    readFileSync(join(home, ".config", "opencode", "openai-accounts.json"), "utf-8"),
+  ) as {
+    activeAccountIndex: number;
+    roundRobinCursor?: number;
+  };
 }
 
 describe("AccountManager strategy selection", () => {
@@ -61,6 +70,29 @@ describe("AccountManager strategy selection", () => {
     expect(pick4?.index).toBe(0);
   });
 
+  it("persists live round-robin selection state to disk", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-rr-persisted-active-"));
+    const manager = await createManager(home, "round-robin");
+    await manager.loadFromDisk();
+
+    await manager.addAccount("a@example.com", "rt-1");
+    await manager.addAccount("b@example.com", "rt-2");
+    await manager.addAccount("c@example.com", "rt-3");
+
+    expect((await manager.getNextAvailableAccount())?.index).toBe(0);
+    expect((await manager.getNextAvailableAccount())?.index).toBe(1);
+
+    const stored = readAccountsStorage(home);
+    expect(stored.activeAccountIndex).toBe(1);
+    expect(stored.roundRobinCursor).toBe(2);
+
+    const reloadedManager = await createManager(home, "round-robin");
+    await reloadedManager.loadFromDisk();
+
+    expect(reloadedManager.getActiveAccount()?.index).toBe(1);
+    expect((await reloadedManager.getNextAvailableAccount())?.index).toBe(2);
+  });
+
   it("rotates initial account across sessions in hybrid mode", async () => {
     const home = mkdtempSync(join(tmpdir(), "strategy-hybrid-"));
 
@@ -101,6 +133,27 @@ describe("AccountManager strategy selection", () => {
     expect(third?.index).toBe(1);
   });
 
+  it("persists active account after exclusion-based failover", async () => {
+    const home = mkdtempSync(join(tmpdir(), "strategy-sticky-persisted-failover-"));
+    const manager = await createManager(home, "sticky");
+    await manager.loadFromDisk();
+
+    await manager.addAccount("a@example.com", "rt-1");
+    await manager.addAccount("b@example.com", "rt-2");
+
+    expect((await manager.getNextAvailableAccount("gpt-5.2-codex"))?.index).toBe(0);
+    expect(
+      (await manager.getNextAvailableAccountExcluding(new Set([0]), "gpt-5.2-codex"))?.index,
+    ).toBe(1);
+
+    const stored = readAccountsStorage(home);
+    expect(stored.activeAccountIndex).toBe(1);
+
+    const reloadedManager = await createManager(home, "sticky");
+    await reloadedManager.loadFromDisk();
+
+    expect(reloadedManager.getActiveAccount()?.index).toBe(1);
+  });
   it("skips rate-limited accounts and keeps round-robin progression", async () => {
     const home = mkdtempSync(join(tmpdir(), "strategy-rr-failover-"));
     const manager = await createManager(home, "round-robin");
