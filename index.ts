@@ -34,6 +34,7 @@ import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
 import { codexStatus } from "./lib/codex-status.js";
 import { prefetchModels } from "./lib/models.js";
+import { SessionContextStore } from "./lib/session-context.js";
 import { SessionBindingStore } from "./lib/session-bindings.js";
 
 function extractModelFromBody(body: string | undefined): string | undefined {
@@ -58,6 +59,65 @@ function extractPromptCacheKeyFromBody(body: string | undefined): string | undef
   } catch {
     return undefined;
   }
+}
+
+function extractSessionIdFromHeaders(
+  headers: unknown,
+): string | undefined {
+  if (!headers) return undefined;
+
+  if (headers instanceof Headers) {
+    const sessionId = headers.get("session_id")?.trim();
+    return sessionId && sessionId.length > 0 ? sessionId : undefined;
+  }
+
+  if (Array.isArray(headers)) {
+    for (const entry of headers) {
+      if (!Array.isArray(entry) || entry.length !== 2) continue;
+      const [key, value] = entry;
+      if (key === "session_id" && typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+    }
+    return undefined;
+  }
+
+  if (!isRecord(headers)) return undefined;
+  const value = headers.session_id;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function extractSessionIdFromToolContext(context: unknown): string | undefined {
+  if (!isRecord(context)) return undefined;
+
+  const direct = getStringField(context, "sessionID") || getStringField(context, "sessionId");
+  if (direct) return direct;
+
+  const session = context.session;
+  if (!isRecord(session)) return undefined;
+  return (
+    getStringField(session, "id") ||
+    getStringField(session, "sessionID") ||
+    getStringField(session, "sessionId")
+  );
+}
+
+function resolveAccountLabel(account: ManagedAccount): string {
+  return account.email || `Account ${account.index + 1}`;
 }
 
 let lastToastAccountIndex: number | null = null;
@@ -196,6 +256,7 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
   const sessionBindingStore = new SessionBindingStore();
   sessionBindingStore.loadFromDisk();
+  const sessionContextStore = new SessionContextStore();
 
   const findAccountByIndex = (index: number): ManagedAccount | null => {
     return accountManager.getAllAccounts().find((acc) => acc.index === index) || null;
@@ -610,6 +671,10 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               typeof init?.body === "string" ? (init.body as string) : undefined;
             const model = extractModelFromBody(requestBody);
             const sessionKey = extractPromptCacheKeyFromBody(requestBody);
+            const sessionId = extractSessionIdFromHeaders(init?.headers);
+            if (sessionId && sessionKey) {
+              sessionContextStore.setPromptCacheKey(sessionId, sessionKey);
+            }
             const account = await getSessionBoundAccount(sessionKey, model);
 
             if (!account) {
@@ -688,6 +753,17 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
     },
     config: async (cfg) => {
       cfg.command = cfg.command || {};
+      cfg.command["codex-account-list"] = {
+        template:
+          "Run the codex-account-list tool and output the result EXACTLY as returned by the tool, without any additional text or commentary.",
+        description:
+          "List all configured OpenAI accounts, marking the current session account and default account.",
+      };
+      cfg.command["codex-switch-account"] = {
+        template:
+          'Run the codex-switch-account tool with selector "$ARGUMENTS" and output the result EXACTLY as returned by the tool, without any additional text or commentary.',
+        description: "Switch the current session to a configured OpenAI account.",
+      };
       cfg.command["codex-status"] = {
         template:
           "Run the codex-status tool and output the result EXACTLY as returned by the tool, without any additional text or commentary.",
@@ -696,11 +772,98 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
       cfg.experimental = cfg.experimental || {};
       cfg.experimental.primary_tools = cfg.experimental.primary_tools || [];
+      if (!cfg.experimental.primary_tools.includes("codex-account-list")) {
+        cfg.experimental.primary_tools.push("codex-account-list");
+      }
+      if (!cfg.experimental.primary_tools.includes("codex-switch-account")) {
+        cfg.experimental.primary_tools.push("codex-switch-account");
+      }
       if (!cfg.experimental.primary_tools.includes("codex-status")) {
         cfg.experimental.primary_tools.push("codex-status");
       }
     },
     tool: {
+      "codex-account-list": tool({
+        description:
+          "List all configured OpenAI accounts, marking the current session account and default account.",
+        args: {},
+        async execute(_args, context) {
+          const accounts = accountManager.getAllAccounts();
+          if (accounts.length === 0) {
+            return [
+              "OpenAI Accounts",
+              "",
+              "  Accounts: 0",
+              "",
+              "Add accounts:",
+              "  opencode auth login",
+            ].join("\n");
+          }
+
+          const activeIndex = accountManager.getActiveAccount()?.index;
+          const sessionId = extractSessionIdFromToolContext(context);
+          const currentSessionKey =
+            sessionId && sessionContextStore.getPromptCacheKey(sessionId);
+          const currentSessionIndex =
+            currentSessionKey !== undefined
+              ? sessionBindingStore.get(currentSessionKey)
+              : undefined;
+
+          const lines: string[] = ["OpenAI Accounts", ""];
+          for (const account of accounts) {
+            const markers: string[] = [];
+            if (account.index === currentSessionIndex) {
+              markers.push("CURRENT_SESSION");
+            }
+            if (account.index === activeIndex) {
+              markers.push("DEFAULT");
+            }
+            if (markers.length === 0) {
+              markers.push("READY");
+            }
+
+            lines.push(
+              `${account.index + 1}. ${markers.join(" ")} ${resolveAccountLabel(account)} [${account.planType || "Unknown"}]`,
+            );
+          }
+
+          return lines.join("\n");
+        },
+      }),
+      "codex-switch-account": tool({
+        description: "Switch the current session to a configured OpenAI account.",
+        args: {
+          selector: tool.schema.string().describe("Account index (1-based) or email"),
+        },
+        async execute(args, context) {
+          const selector = args.selector.trim();
+          if (!selector) {
+            return "Account selector is required.";
+          }
+
+          const sessionId = extractSessionIdFromToolContext(context);
+          if (!sessionId) {
+            return "Could not determine the current session. Run this command from an active OpenCode session and try again.";
+          }
+
+          const sessionKey = sessionContextStore.getPromptCacheKey(sessionId);
+          if (!sessionKey) {
+            return "Current session has no known prompt_cache_key yet. Send one normal model request in this session first, then retry.";
+          }
+
+          const numericSelector = Number(selector);
+          const targetAccount = Number.isInteger(numericSelector)
+            ? accountManager.getAccountByIndex(numericSelector - 1)
+            : accountManager.findAccountByEmail(selector);
+
+          if (!targetAccount) {
+            return `No configured OpenAI account matches \"${selector}\".`;
+          }
+
+          sessionBindingStore.set(sessionKey, targetAccount.index);
+          return `Switched current session to account ${targetAccount.index + 1} (${resolveAccountLabel(targetAccount)}). Takes effect on the next request in this session.`;
+        },
+      }),
       "codex-status": tool({
         description: "List all configured OpenAI accounts and their current usage status.",
         args: {},

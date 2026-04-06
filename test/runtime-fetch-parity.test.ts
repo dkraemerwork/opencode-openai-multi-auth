@@ -1,9 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+function requireAuthLoader(plugin: Awaited<ReturnType<typeof import('../index.js').OpenAIAuthPlugin>>) {
+	if (!plugin.auth?.loader) {
+		throw new Error('Expected plugin auth loader to be defined');
+	}
+	return plugin.auth.loader;
+}
+
 const transformRequestForCodexMock = vi.fn();
 
 vi.mock('@opencode-ai/plugin', () => ({
-	tool: (definition: unknown) => definition,
+	tool: Object.assign((definition: unknown) => definition, {
+		schema: {
+			string: () => ({
+				describe() {
+					return this;
+				},
+			}),
+		},
+	}),
 }));
 
 vi.mock('../lib/request/fetch-helpers.js', async () => {
@@ -15,6 +30,10 @@ vi.mock('../lib/request/fetch-helpers.js', async () => {
 		transformRequestForCodex: transformRequestForCodexMock,
 	};
 });
+
+vi.mock('../lib/models.js', () => ({
+	prefetchModels: vi.fn(async () => {}),
+}));
 
 vi.mock('../lib/accounts/index.js', () => {
 	class AccountManager {
@@ -41,6 +60,9 @@ vi.mock('../lib/accounts/index.js', () => {
 			return this.account;
 		}
 		async getNextAvailableAccountForNewSession() {
+			return this.account;
+		}
+		async getNextAvailableAccountExcluding() {
 			return this.account;
 		}
 		async ensureValidToken() {
@@ -93,7 +115,7 @@ describe('Runtime fetch parity', () => {
 			},
 		} as any);
 
-		const loader = await plugin.auth.loader(
+		const loader = await requireAuthLoader(plugin)(
 			async () => ({
 				type: 'oauth',
 				access: 'access-token',
