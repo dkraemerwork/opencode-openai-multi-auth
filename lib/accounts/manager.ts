@@ -189,6 +189,19 @@ export class AccountManager {
     return this.accounts;
   }
 
+  getAccountByIndex(index: number): ManagedAccount | null {
+    return this.accounts.find((account) => account.index === index) || null;
+  }
+
+  findAccountByEmail(email: string): ManagedAccount | null {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return null;
+    return (
+      this.accounts.find((account) => account.email?.toLowerCase() === normalizedEmail) ||
+      null
+    );
+  }
+
   getAccountCount(): number {
     return this.accounts.length;
   }
