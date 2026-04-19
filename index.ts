@@ -34,7 +34,7 @@ import { AccountManager } from "./lib/accounts/index.js";
 import type { ManagedAccount } from "./lib/accounts/index.js";
 import { codexStatus } from "./lib/codex-status.js";
 import { prefetchModels } from "./lib/models.js";
-import { SessionBindingStore } from "./lib/session-bindings.js";
+import { SessionBindingStore, SessionContextStore } from "./lib/session-bindings.js";
 
 function extractModelFromBody(body: string | undefined): string | undefined {
   if (!body) return undefined;
@@ -60,12 +60,39 @@ function extractPromptCacheKeyFromBody(body: string | undefined): string | undef
   }
 }
 
+function extractSessionIdFromHeaders(headers: RequestInit["headers"]): string | undefined {
+  if (!headers) return undefined;
+
+  const normalized = new Headers(headers);
+  const sessionId = normalized.get("session_id")?.trim();
+  return sessionId ? sessionId : undefined;
+}
+
+function extractSessionIdFromToolContext(context: unknown): string | undefined {
+  if (!context || typeof context !== "object") return undefined;
+
+  const candidate = context as {
+    sessionID?: string;
+    sessionId?: string;
+    session?: { id?: string };
+  };
+
+  return candidate.sessionID?.trim()
+    || candidate.sessionId?.trim()
+    || candidate.session?.id?.trim()
+    || undefined;
+}
+
 let lastToastAccountIndex: number | null = null;
 let lastToastTime = 0;
 const TOAST_DEBOUNCE_MS = 5000;
 
 /** Track which models we've already shown fallback notifications for */
 const notifiedFallbacks = new Set<string>();
+
+function resolveAccountLabel(account: ManagedAccount): string {
+  return account.email || `Account ${account.index + 1}`;
+}
 
 export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
   const quietMode = process.env.OPENCODE_OPENAI_QUIET === "1";
@@ -196,16 +223,82 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 
   const sessionBindingStore = new SessionBindingStore();
   sessionBindingStore.loadFromDisk();
+  const sessionContextStore = new SessionContextStore();
+  const sessionAccountHints = new Map<string, number>();
 
   const findAccountByIndex = (index: number): ManagedAccount | null => {
     return accountManager.getAllAccounts().find((acc) => acc.index === index) || null;
   };
 
+  const resolveInheritedAccountForSession = async (
+    sessionId: string | undefined,
+    visited = new Set<string>(),
+  ): Promise<ManagedAccount | null> => {
+    const normalizedSessionId = sessionId?.trim();
+    if (!normalizedSessionId || visited.has(normalizedSessionId)) {
+      return null;
+    }
+
+    visited.add(normalizedSessionId);
+
+    const knownSessionKey = sessionContextStore.getPromptCacheKey(normalizedSessionId);
+    if (knownSessionKey) {
+      const boundIndex = sessionBindingStore.get(knownSessionKey);
+      if (boundIndex !== undefined) {
+        const boundAccount = findAccountByIndex(boundIndex);
+        if (boundAccount) {
+          sessionAccountHints.set(normalizedSessionId, boundAccount.index);
+          return boundAccount;
+        }
+        sessionBindingStore.delete(knownSessionKey);
+      }
+    }
+
+    const hintedIndex = sessionAccountHints.get(normalizedSessionId);
+    if (hintedIndex !== undefined) {
+      const hintedAccount = findAccountByIndex(hintedIndex);
+      if (hintedAccount) {
+        return hintedAccount;
+      }
+      sessionAccountHints.delete(normalizedSessionId);
+    }
+
+    const sessionApi = (client as { session?: { get?: (input: { path: { id: string } }) => Promise<unknown> } }).session;
+    if (typeof sessionApi?.get !== "function") {
+      return null;
+    }
+
+    try {
+      const sessionResult = await sessionApi.get({ path: { id: normalizedSessionId } }) as {
+        data?: { parentID?: string };
+      };
+      const parentSessionId =
+        typeof sessionResult?.data?.parentID === "string"
+          ? sessionResult.data.parentID
+          : undefined;
+      const inheritedAccount = await resolveInheritedAccountForSession(
+        parentSessionId,
+        visited,
+      );
+      if (inheritedAccount) {
+        sessionAccountHints.set(normalizedSessionId, inheritedAccount.index);
+      }
+      return inheritedAccount;
+    } catch {
+      return null;
+    }
+  };
+
   const getSessionBoundAccount = async (
     sessionKey: string | undefined,
+    sessionId: string | undefined,
     model?: string,
   ): Promise<ManagedAccount | null> => {
     if (!sessionKey) {
+      const inheritedAccount = await resolveInheritedAccountForSession(sessionId);
+      if (inheritedAccount) {
+        return inheritedAccount;
+      }
       return accountManager.getNextAvailableAccount(model);
     }
 
@@ -213,14 +306,29 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
     if (boundIndex !== undefined) {
       const bound = findAccountByIndex(boundIndex);
       if (bound) {
+        if (sessionId) {
+          sessionAccountHints.set(sessionId, bound.index);
+        }
         return bound;
       }
       sessionBindingStore.delete(sessionKey);
     }
 
+    const inheritedAccount = await resolveInheritedAccountForSession(sessionId);
+    if (inheritedAccount) {
+      sessionBindingStore.set(sessionKey, inheritedAccount.index);
+      if (sessionId) {
+        sessionAccountHints.set(sessionId, inheritedAccount.index);
+      }
+      return inheritedAccount;
+    }
+
     const account = await accountManager.getNextAvailableAccountForNewSession(model);
     if (account) {
       sessionBindingStore.set(sessionKey, account.index);
+      if (sessionId) {
+        sessionAccountHints.set(sessionId, account.index);
+      }
     }
     return account;
   };
@@ -610,7 +718,11 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
               typeof init?.body === "string" ? (init.body as string) : undefined;
             const model = extractModelFromBody(requestBody);
             const sessionKey = extractPromptCacheKeyFromBody(requestBody);
-            const account = await getSessionBoundAccount(sessionKey, model);
+            const sessionId = extractSessionIdFromHeaders(init?.headers);
+            if (sessionId && sessionKey) {
+              sessionContextStore.setPromptCacheKey(sessionId, sessionKey);
+            }
+            const account = await getSessionBoundAccount(sessionKey, sessionId, model);
 
             if (!account) {
               return new Response(
@@ -701,6 +813,88 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
       }
     },
     tool: {
+      "codex-account-list": tool({
+        description:
+          "List all configured OpenAI accounts, marking the current session account and default account.",
+        args: {},
+        async execute(_args, context) {
+          const accounts = accountManager.getAllAccounts();
+          if (accounts.length === 0) {
+            return [
+              "OpenAI Accounts",
+              "",
+              "  Accounts: 0",
+              "",
+              "Add accounts:",
+              "  opencode auth login",
+            ].join("\n");
+          }
+
+          const activeIndex = accountManager.getActiveAccount()?.index;
+          const sessionId = extractSessionIdFromToolContext(context);
+          const currentSessionKey =
+            sessionId && sessionContextStore.getPromptCacheKey(sessionId);
+          const currentSessionIndex =
+            currentSessionKey !== undefined
+              ? sessionBindingStore.get(currentSessionKey)
+              : undefined;
+
+          const lines: string[] = ["OpenAI Accounts", ""];
+          for (const account of accounts) {
+            const markers: string[] = [];
+            if (account.index === currentSessionIndex) {
+              markers.push("CURRENT_SESSION");
+            }
+            if (account.index === activeIndex) {
+              markers.push("DEFAULT");
+            }
+            if (markers.length === 0) {
+              markers.push("READY");
+            }
+
+            lines.push(
+              `${account.index + 1}. ${markers.join(" ")} ${resolveAccountLabel(account)} [${account.planType || "Unknown"}]`,
+            );
+          }
+
+          return lines.join("\n");
+        },
+      }),
+      "codex-switch-account": tool({
+        description: "Switch the current session to a configured OpenAI account.",
+        args: {
+          selector: tool.schema.string().describe("Account index (1-based) or email"),
+        },
+        async execute(args, context) {
+          const selector = args.selector.trim();
+          if (!selector) {
+            return "Account selector is required.";
+          }
+
+          const sessionId = extractSessionIdFromToolContext(context);
+          if (!sessionId) {
+            return "Could not determine the current session. Run this command from an active OpenCode session and try again.";
+          }
+
+          const sessionKey = sessionContextStore.getPromptCacheKey(sessionId);
+          if (!sessionKey) {
+            return "Current session has no known prompt_cache_key yet. Send one normal model request in this session first, then retry.";
+          }
+
+          const numericSelector = Number(selector);
+          const targetAccount = Number.isInteger(numericSelector)
+            ? accountManager.getAccountByIndex(numericSelector - 1)
+            : accountManager.findAccountByEmail(selector);
+
+          if (!targetAccount) {
+            return `No configured OpenAI account matches \"${selector}\".`;
+          }
+
+          sessionBindingStore.set(sessionKey, targetAccount.index);
+          sessionAccountHints.set(sessionId, targetAccount.index);
+          return `Switched current session to account ${targetAccount.index + 1} (${resolveAccountLabel(targetAccount)}). Takes effect on the next request in this session.`;
+        },
+      }),
       "codex-status": tool({
         description: "List all configured OpenAI accounts and their current usage status.",
         args: {},

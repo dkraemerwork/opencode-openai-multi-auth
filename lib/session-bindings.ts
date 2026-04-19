@@ -66,3 +66,19 @@ export class SessionBindingStore {
 		}
 	}
 }
+
+export class SessionContextStore {
+	private readonly promptCacheKeys = new Map<string, string>();
+
+	getPromptCacheKey(sessionId: string): string | undefined {
+		return this.promptCacheKeys.get(sessionId);
+	}
+
+	setPromptCacheKey(sessionId: string, promptCacheKey: string): void {
+		this.promptCacheKeys.set(sessionId, promptCacheKey);
+	}
+
+	deletePromptCacheKey(sessionId: string): void {
+		this.promptCacheKeys.delete(sessionId);
+	}
+}
