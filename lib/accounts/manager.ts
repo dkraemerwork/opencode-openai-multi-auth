@@ -35,6 +35,72 @@ export class AccountManager {
   private strategyInitialized = false;
   private config: MultiAccountConfig;
 
+  private readOpenCodeAuthSnapshot(): {
+    access?: string;
+    refresh: string;
+    expires?: number;
+    accountId?: string;
+    userId?: string;
+  } | null {
+    if (!existsSync(OPENCODE_AUTH_FILE)) return null;
+
+    try {
+      const authData = JSON.parse(readFileSync(OPENCODE_AUTH_FILE, "utf-8"));
+      const openaiAuth = authData?.openai;
+
+      if (openaiAuth?.type !== "oauth" || !openaiAuth?.refresh) {
+        return null;
+      }
+
+      let accountId: string | undefined;
+      let userId: string | undefined;
+
+      if (openaiAuth.access) {
+        const decoded = decodeJWT(openaiAuth.access);
+        if (decoded) {
+          accountId = extractAccountIdFromClaims(decoded);
+          const authClaims = decoded["https://api.openai.com/auth"] as
+            | Record<string, unknown>
+            | undefined;
+          userId = authClaims?.chatgpt_user_id as string | undefined;
+        }
+      }
+
+      return {
+        access: openaiAuth.access,
+        refresh: openaiAuth.refresh,
+        expires: openaiAuth.expires,
+        accountId,
+        userId,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private isSameAccount(
+    account: ManagedAccount,
+    snapshot: {
+      accountId?: string;
+      userId?: string;
+      refresh: string;
+    },
+  ): boolean {
+    if (account.userId && snapshot.userId) {
+      if (account.accountId && snapshot.accountId) {
+        return account.userId === snapshot.userId && account.accountId === snapshot.accountId;
+      }
+
+      return account.userId === snapshot.userId;
+    }
+
+    if (account.accountId && snapshot.accountId) {
+      return account.accountId === snapshot.accountId;
+    }
+
+    return account.parts.refreshToken === snapshot.refresh;
+  }
+
   constructor(config: Partial<MultiAccountConfig> = {}) {
     this.config = { ...DEFAULT_MULTI_ACCOUNT_CONFIG, ...config };
   }
@@ -75,27 +141,15 @@ export class AccountManager {
   }
 
   async importFromOpenCodeAuth(): Promise<void> {
-    if (!existsSync(OPENCODE_AUTH_FILE)) return;
+    const snapshot = this.readOpenCodeAuthSnapshot();
+    if (!snapshot) return;
 
-    try {
-      const authData = JSON.parse(readFileSync(OPENCODE_AUTH_FILE, "utf-8"));
-      const openaiAuth = authData?.openai;
-
-      if (openaiAuth?.type === "oauth" && openaiAuth?.refresh) {
-        const existingAccount = this.accounts.find(
-          (a) => a.parts.refreshToken === openaiAuth.refresh,
-        );
-
-        if (!existingAccount) {
-          await this.addAccount(
-            undefined,
-            openaiAuth.refresh,
-            openaiAuth.access,
-            openaiAuth.expires,
-          );
-        }
-      }
-    } catch {}
+    await this.addAccount(
+      undefined,
+      snapshot.refresh,
+      snapshot.access,
+      snapshot.expires,
+    );
   }
 
   async addAccount(
@@ -132,8 +186,17 @@ export class AccountManager {
     // Deduplicate by userId + accountId (unique per user per workspace) or fallback to refreshToken
     const existingIndex = this.accounts.findIndex((a) => {
       if (userId && a.userId) {
-        return a.userId === userId && a.accountId === accountId;
+        if (accountId && a.accountId) {
+          return a.userId === userId && a.accountId === accountId;
+        }
+
+        return a.userId === userId;
       }
+
+      if (accountId && a.accountId) {
+        return a.accountId === accountId;
+      }
+
       return a.parts.refreshToken === refreshToken;
     });
 
@@ -434,6 +497,28 @@ export class AccountManager {
     account.isRefreshing = true;
     account.refreshPromise = (async () => {
       try {
+        const openCodeSnapshot = this.readOpenCodeAuthSnapshot();
+        if (openCodeSnapshot && this.isSameAccount(account, openCodeSnapshot)) {
+          const sameAccess = openCodeSnapshot.access === account.access;
+          const sameRefresh = openCodeSnapshot.refresh === account.parts.refreshToken;
+
+          if (!sameAccess || !sameRefresh) {
+            await this.addAccount(
+              undefined,
+              openCodeSnapshot.refresh,
+              openCodeSnapshot.access,
+              openCodeSnapshot.expires,
+            );
+          } else if (openCodeSnapshot.expires) {
+            account.expires = openCodeSnapshot.expires;
+            await this.saveToDisk();
+          }
+
+          account.consecutiveFailures = 0;
+          account.lastRefreshError = undefined;
+          return true;
+        }
+
         const result = await refreshAccessToken(account.parts.refreshToken);
 
         if (result.type === "success") {
@@ -472,6 +557,14 @@ export class AccountManager {
   getActiveAccount(): ManagedAccount | null {
     if (this.accounts.length === 0) return null;
     return this.accounts[this.activeIndex] || this.accounts[0];
+  }
+
+  getAccountByIndex(index: number): ManagedAccount | null {
+    return this.accounts.find((account) => account.index === index) || null;
+  }
+
+  findAccountByEmail(email: string): ManagedAccount | null {
+    return this.accounts.find((account) => account.email === email) || null;
   }
 
   /**
